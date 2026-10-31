@@ -103,6 +103,89 @@ test('color: wire format caps channels at 0xFE and folds brightness where the ba
     assert.deepStrictEqual(C.toWire(f, { brightness: false }), { upper: [128, 0, 0], lower: [0, 128, 128], brightness: 1 });
 });
 
+/* ---------- light.js ---------- */
+const F = (rgb, b) => ({ upper: rgb, lower: rgb, brightness: b === undefined ? 1 : b });
+function fakeBackend(o) {
+    const be = Object.assign({ name: 'test', label: 'Test', kind: 'sim', validated: true, maxRate: 20, capabilities: { freeColor: true, brightness: true }, calls: [], releases: 0, answer: { ok: true } }, o || {});
+    be.apply = (f) => { be.calls.push(f); return Promise.resolve(be.answer); };
+    be.release = () => { be.releases++; return Promise.resolve(); };
+    return be;
+}
+test('light: sends a new frame once, in wire format', async () => {
+    const light = app('light.js'), be = fakeBackend(), s = light.createSender(be, { clock: fakeClock() });
+    s.push(F([255, 0, 0]));
+    await settle(); await settle();
+    s.push(F([255, 0, 0]));
+    await settle(); await settle();
+    assert.strictEqual(be.calls.length, 1);
+    assert.deepStrictEqual(be.calls[0], { upper: [254, 0, 0], lower: [254, 0, 0], brightness: 1 });
+    assert.deepStrictEqual(s.status(), { state: 'simuliert', reason: null });
+});
+test('light: brightness folded into RGB where the backend cannot take it', async () => {
+    const light = app('light.js'), be = fakeBackend({ capabilities: { freeColor: true, brightness: false } });
+    light.createSender(be, { clock: fakeClock() }).push(F([255, 0, 0], 0.5));
+    await settle(); await settle();
+    assert.deepStrictEqual(be.calls[0], { upper: [128, 0, 0], lower: [128, 0, 0], brightness: 1 });
+});
+test('light: at most maxRate frames a second, the newest one wins', async () => {
+    const light = app('light.js'), clk = fakeClock(), be = fakeBackend({ maxRate: 10 }), s = light.createSender(be, { clock: clk });
+    s.push(F([1, 0, 0]));
+    await settle(); await settle();
+    s.push(F([2, 0, 0]));
+    s.push(F([3, 0, 0]));
+    await clk.advance(99);
+    assert.strictEqual(be.calls.length, 1);
+    await clk.advance(1);
+    assert.strictEqual(be.calls.length, 2);
+    assert.deepStrictEqual(be.calls[1].upper, [3, 0, 0]);
+});
+test('light: retries after 0.5, 1 and 2 s, stops at the 4th failure, a user action tries again', async () => {
+    const light = app('light.js'), clk = fakeClock();
+    const be = fakeBackend({ kind: 'real', answer: { ok: false, reason: 'BDC lehnt ab' } }), s = light.createSender(be, { clock: clk });
+    s.push(F([9, 9, 9]));
+    await settle(); await settle();
+    assert.strictEqual(be.calls.length, 1);
+    await clk.advance(499); assert.strictEqual(be.calls.length, 1);
+    await clk.advance(1); assert.strictEqual(be.calls.length, 2);
+    await clk.advance(1000); assert.strictEqual(be.calls.length, 3);
+    await clk.advance(2000); assert.strictEqual(be.calls.length, 4);
+    assert.deepStrictEqual(s.status(), { state: 'fehler', reason: 'BDC lehnt ab' });
+    await clk.advance(60000);
+    s.push(F([8, 8, 8]));
+    await settle(); await settle();
+    assert.strictEqual(be.calls.length, 4);
+    be.answer = { ok: true };
+    s.resume();
+    await settle(); await settle();
+    assert.strictEqual(be.calls.length, 5);
+    assert.deepStrictEqual(be.calls[4].upper, [8, 8, 8]);
+    assert.deepStrictEqual(s.status(), { state: 'aktiv', reason: null });
+});
+test('light: a locked backend is never called', async () => {
+    const light = app('light.js'), be = fakeBackend({ kind: 'real', validated: false }), s = light.createSender(be, { clock: fakeClock() });
+    s.push(F([255, 0, 0]));
+    s.resume();
+    await settle(); await settle();
+    assert.strictEqual(be.calls.length, 0);
+    assert.deepStrictEqual(s.status(), { state: 'gesperrt', reason: 'noch nicht am Auto geprüft' });
+});
+test('light: release hands back and stops sending', async () => {
+    const light = app('light.js'), be = fakeBackend(), s = light.createSender(be, { clock: fakeClock() });
+    await s.release();
+    s.push(F([255, 0, 0]));
+    await settle(); await settle();
+    assert.deepStrictEqual([be.releases, be.calls.length], [1, 0]);
+});
+test('light: backends - simulated is the only one unlocked in version 1', async () => {
+    const light = app('light.js');
+    const sim = light.createBackend('sim'), profile = light.createBackend('profile'), bdc = light.createBackend('bdc');
+    assert.deepStrictEqual([sim.kind, sim.validated, sim.maxRate], ['sim', true, 20]);
+    assert.deepStrictEqual([profile.validated, bdc.validated], [false, false]);
+    assert.deepStrictEqual(await bdc.apply(F([1, 2, 3])), { ok: false, reason: 'gesperrt' });
+    assert.deepStrictEqual(await profile.apply(F([1, 2, 3])), { ok: false, reason: 'gesperrt' });
+    assert.strictEqual(light.createBackend('nonsense').name, 'sim');
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;
