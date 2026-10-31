@@ -446,6 +446,68 @@ test('loop: an effect without its data pauses on the fixed colours and says why'
     assert.strictEqual(loop.why(), 'Daten nicht verfügbar');
 });
 
+/* ---------- pages ---------- */
+function pageRig(o) {
+    const { Recorder } = require(path.join(KIT, 'record'));
+    const themes = require(path.join(KIT, 'themes'));
+    const ui = app('ui.js'), { readInputs } = app('inputs.js');
+    const state = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    const car = Object.assign({ demo: true, rpm: 2000, speed: 50, gLong: 0, gLat: 0 }, (o && o.car) || {});
+    const deps = {
+        state,
+        loop: { frame: () => null, why: () => null },
+        sender: () => ({ status: () => ({ state: 'simuliert', reason: null }) }),
+        inputs: () => readInputs(car, 0),
+    };
+    const view = { page: (o && o.page) || 0, editFavs: false };
+    const act = ui.makeActions(state, view);
+    const draw = () => {
+        const cv = new Recorder(ui.W, ui.H);
+        ui.drawPage(cv, themes.theme(), deps, view, act);
+        return (k) => cv.targets.find((q) => q.key === k);
+    };
+    return { state, view, act, draw };
+}
+test('pages: the kit fonts carry the German letters', () => {
+    const fonts = require(path.join(KIT, 'fonts'));
+    ['label', 'bold'].forEach((fam) => 'äöüÄÖÜß'.split('').forEach((ch) => assert.ok(fonts.get(fam, 24, 'a').glyphs[ch.codePointAt(0)], fam + ' ' + ch)));
+});
+test('pages: badge per sender state', () => {
+    const ui = app('ui.js');
+    assert.deepStrictEqual(ui.badge({ state: 'simuliert', reason: null }), { text: 'SIMULIERT', color: 'cold' });
+    assert.deepStrictEqual(ui.badge({ state: 'fehler', reason: 'BDC lehnt ab' }), { text: 'FEHLER · BDC lehnt ab', color: 'crit' });
+    assert.deepStrictEqual(ui.badge({ state: 'gesperrt', reason: 'x' }), { text: 'GESPERRT', color: 'warn' });
+});
+test('Farbe: the wheel follows the finger and the knob, the lines pick the zone, sliders turn', () => {
+    const page = app('ui_color.js'), r = pageRig();
+    const by = r.draw();
+    ['wheel', 'zone-upper', 'zone-lower', 'sat', 'bri', 'Tauschen', 'Gleich'].forEach((k) => assert.ok(by(k), 'target ' + k));
+    assert.ok(by('wheel').drag && by('wheel').turn && by('bri').drag && by('bri').turn);
+    by('wheel').drag(1, page.WX + page.WR, page.WY);
+    near([r.state.get().upper.h, r.state.get().upper.s], [90, 1], 1e-6);
+    by('wheel').turn(2);
+    near(r.state.get().upper.h, 100, 1e-6);
+    by('wheel').drag(2, page.WX + 400, page.WY);      // far outside: ignored
+    near(r.state.get().upper.h, 100, 1e-6);
+    by('zone-lower').run();
+    assert.strictEqual(r.state.get().zone, 'lower');
+    by('bri').turn(-2);
+    near(r.state.get().brightness, 0.7, 1e-9);
+    by('sat').drag(1, 0, 0);                           // far left: saturation 0
+    near(r.state.get().lower.s, 0);
+    by('Tauschen').run();
+    near(r.state.get().upper.s, 0);
+});
+test('Farbe: a colour change ends an effect that does not use the colours', () => {
+    const r = pageRig();
+    r.state.setEffect('cycle');
+    r.act.wheel({ h: 10, s: 1 });
+    assert.strictEqual(r.state.get().effect, null);
+    r.state.setEffect('breathe');
+    r.act.wheel({ h: 20, s: 1 });
+    assert.strictEqual(r.state.get().effect, 'breathe');
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;

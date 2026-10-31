@@ -1,0 +1,38 @@
+{
+  "id": "gs_ambient",
+  "title": "Ambient",
+  "description": "Farbrad für die Ambientebeleuchtung: zwei Zonen (oben und unten), Helligkeit, acht Effekte und Favoriten. Version 1 steuert das Licht nur simuliert, bis ein Weg am Auto geprüft ist",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAB0",
+  "iconGlyph": "Am",
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": { "statusEngineSpeed2": "rs" },
+    "de.bmw.infotainment.vehicle.Vehicle2": { "statusCarSpeed2": "rs" },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Ambient",
+      "buttons": [
+        ["BTN_PAGE", "Nächste Seite"],
+        ["BTN_SETTINGS", "Einstellungen"]
+      ]
+    }
+  ],
+  "settings": [
+    {"key": "light", "label": "Lichtsteuerung", "type": "choice", "default": "sim",
+     "options": [["sim", "Simuliert (sicher)"], ["profile", "Profil umschalten · gesperrt, noch nicht am Auto geprüft"], ["bdc", "BDC-Stellgliedtest · gesperrt, noch nicht am Auto geprüft"]]},
+    {"key": "layout", "label": "Bildschirm-Layout", "type": "choice", "default": "full",
+     "options": [["full", "Vollbild"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (Standard)"], ["software", "Software"]]},
+    {"key": "demo", "label": "Demo-Daten", "type": "choice", "default": "auto",
+     "options": [["auto", "Auto"], ["on", "Immer"], ["off", "Nie"]]}
+  ]
+}
