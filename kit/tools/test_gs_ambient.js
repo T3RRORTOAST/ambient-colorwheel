@@ -103,6 +103,82 @@ test('color: wire format caps channels at 0xFE and folds brightness where the ba
     assert.deepStrictEqual(C.toWire(f, { brightness: false }), { upper: [128, 0, 0], lower: [0, 128, 128], brightness: 1 });
 });
 
+/* ---------- state.js ---------- */
+const manualTimers = () => { const t = { fn: null }; t.setTimeout = (fn) => { t.fn = fn; return 1; }; t.clearTimeout = () => { t.fn = null; }; return t; };
+test('state: defaults without a file, no warning', () => {
+    const warns = [];
+    const s = app('state.js').createState(tmpFile(), { log: { warn: (m) => warns.push(m), info() {} } });
+    const st = s.get();
+    assert.deepStrictEqual([st.upper, st.lower, st.brightness, st.zone, st.effect, st.favs], [{ h: 0, s: 1 }, { h: 220, s: 1 }, 0.8, 'upper', null, []]);
+    assert.deepStrictEqual(warns, []);
+});
+test('state: a broken file gives the defaults and a warning, no crash', () => {
+    const f = tmpFile(), warns = [];
+    fs.writeFileSync(f, '{ not json');
+    const s = app('state.js').createState(f, { log: { warn: (m) => warns.push(m), info() {} } });
+    assert.strictEqual(s.get().brightness, 0.8);
+    assert.strictEqual(warns.length, 1);
+});
+test('state: saved 500 ms after the last change (temp file + rename) and loaded again', () => {
+    const f = tmpFile(), timers = manualTimers();
+    const { createState } = app('state.js');
+    const s = createState(f, { timers });
+    s.setColor('upper', { h: 30, s: 0.5 });
+    s.setBrightness(0.6);
+    assert.ok(!fs.existsSync(f), 'not before the timer');
+    timers.fn();
+    assert.ok(fs.existsSync(f) && !fs.existsSync(f + '.tmp'));
+    const again = createState(f).get();
+    assert.deepStrictEqual([again.upper, again.brightness], [{ h: 30, s: 0.5 }, 0.6]);
+});
+test('state: flush saves at once', () => {
+    const f = tmpFile();
+    const s = app('state.js').createState(f, { timers: manualTimers() });
+    s.setZone('lower');
+    s.flush();
+    assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).zone, 'lower');
+});
+test('state: values are kept in range', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    s.setColor('upper', { h: -30, s: 3 });
+    s.setBrightness(5);
+    assert.deepStrictEqual(s.get().upper, { h: 330, s: 1 });
+    assert.strictEqual(s.get().brightness, 1);
+    s.setBrightness(0);
+    assert.strictEqual(s.get().brightness, 0.05);
+});
+test('state: swap and same', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    s.swap();
+    assert.deepStrictEqual([s.get().upper.h, s.get().lower.h], [220, 0]);
+    s.setZone('lower');
+    s.same();
+    assert.deepStrictEqual(s.get().upper, s.get().lower);
+});
+test('state: at most 8 favourites; apply; delete resets effect settings that point at it or later', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    for (let i = 0; i < 8; i++) { s.setColor('upper', { h: i * 10, s: 1 }); assert.strictEqual(s.addFav(), i); }
+    assert.strictEqual(s.addFav(), -1);
+    s.applyFav(3);
+    assert.strictEqual(s.get().upper.h, 30);
+    s.setParam('mode', 'favEco', 0);
+    s.setParam('mode', 'favSport', 2);
+    s.setParam('fade', 'count', 3);
+    s.removeFav(1);
+    assert.strictEqual(s.get().favs.length, 7);
+    assert.deepStrictEqual(s.get().params, { mode: { favEco: 0, favSport: -1 }, fade: { count: 3 } });
+    assert.strictEqual(s.param('mode', 'favEco', -1), 0);
+    assert.strictEqual(s.param('cycle', 'period', 60), 60);
+});
+test('state: listeners hear every change', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    let n = 0;
+    s.onChange(() => n++);
+    s.setZone('lower'); s.swap(); s.setEffect('cycle');
+    assert.strictEqual(n, 3);
+    assert.strictEqual(s.get().effect, 'cycle');
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;
