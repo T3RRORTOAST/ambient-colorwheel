@@ -260,6 +260,67 @@ test('fx breathe: full brightness at the start, depth at half the period', () =>
     assert.deepStrictEqual(run('breathe', 2).upper, RED);
 });
 
+/* ---------- driving and music effects ---------- */
+test('fx: all eight effects, at most three settings each', () => {
+    const fx = app('fx.js');
+    assert.deepStrictEqual(fx.EFFECTS.map((e) => e.id), ['cycle', 'fade', 'breathe', 'rpm', 'speed', 'mode', 'dynamics', 'music']);
+    fx.EFFECTS.forEach((e) => {
+        assert.ok(e.params.length <= 3, e.id);
+        e.params.forEach((p) => assert.ok(p.default !== undefined, e.id + '.' + p.key));
+    });
+});
+test('fx rpm: blue at idle, red at the shift point, blinking above it', () => {
+    assert.deepStrictEqual(run('rpm', 0, { rpm: 800 }).upper, [0, 85, 255]);
+    assert.deepStrictEqual(run('rpm', 0, { rpm: 6500 }).upper, RED);
+    assert.deepStrictEqual(run('rpm', 0.2, { rpm: 6600 }).upper, [0, 0, 0]);
+    assert.deepStrictEqual(run('rpm', 0.2, { rpm: 6600 }, { blink: 'off' }).upper, RED);
+    const f = run('rpm', 0, { rpm: 6500 }, { zones: 'upper' });
+    assert.deepStrictEqual([f.upper, f.lower], [RED, BLUE]);
+    const fx = app('fx.js');
+    assert.strictEqual(fx.availability(fx.byId.rpm, { rpm: null }, base0()), 'Daten nicht verfügbar');
+});
+test('fx speed: colour or brightness over the scale', () => {
+    assert.deepStrictEqual(run('speed', 0, { speed: 0 }).upper, [0, 85, 255]);
+    assert.deepStrictEqual(run('speed', 0, { speed: 250 }).lower, RED);
+    const f = run('speed', 0, { speed: 100 }, { mode: 'brightness', max: 200 });
+    assert.deepStrictEqual(f.upper, RED);
+    near(f.brightness, 0.8 * 0.6);
+});
+test('fx mode: favourite per mode, else blue / own colours / red', () => {
+    const b = base0({ favs: [{ upper: GREEN, lower: GREEN }] });
+    assert.deepStrictEqual(run('mode', 0, { mode: 'eco' }, {}, b).upper, [0, 85, 255]);
+    assert.deepStrictEqual(run('mode', 0, { mode: 'comfort' }, {}, b).lower, BLUE);
+    assert.deepStrictEqual(run('mode', 0, { mode: 'sport' }, {}, b).upper, RED);
+    assert.deepStrictEqual(run('mode', 0, { mode: 'sport' }, { favSport: 0 }, b).upper, GREEN);
+});
+test('fx dynamics: flash above the threshold, fading out over 300 ms', () => {
+    const mem = {}, b = base0({ upper: BLUE, lower: BLUE, brightness: 0.5 });
+    const step = (t, g) => run('dynamics', t, { gLong: g, gLat: 0 }, { thresh: 0.5, color: 'red' }, b, mem);
+    assert.deepStrictEqual(step(0, 0.2).upper, BLUE);
+    const hit = step(1, 1.0);
+    assert.deepStrictEqual([hit.upper, hit.brightness], [RED, 1]);
+    const mid = step(1.15, 0);
+    near(mid.upper, [128, 0, 128], 1);
+    near(mid.brightness, 0.75, 1e-6);
+    assert.deepStrictEqual(step(1.4, 0).upper, BLUE);
+});
+test('fx music: brightness follows the level', () => {
+    near(run('music', 0, { music: 0 }).brightness, 0.8 * 0.15);
+    near(run('music', 0, { music: 1 }, { sens: 5 }).brightness, 0.8);
+    near(run('music', 0, { music: 0.25 }, { sens: 10 }).brightness, 0.8 * (0.15 + 0.85 * 0.5));
+});
+test('fx: which driving effects go on when the colours change', () => {
+    const fx = app('fx.js');
+    const st = (effect, params) => ({ effect, params: params || {} });
+    assert.strictEqual(fx.keepsRunning(st('rpm')), false);
+    assert.strictEqual(fx.keepsRunning(st('rpm', { rpm: { zones: 'upper' } })), true);
+    assert.strictEqual(fx.keepsRunning(st('speed')), false);
+    assert.strictEqual(fx.keepsRunning(st('speed', { speed: { mode: 'brightness' } })), true);
+    assert.strictEqual(fx.keepsRunning(st('mode')), false);
+    assert.strictEqual(fx.keepsRunning(st('dynamics')), true);
+    assert.strictEqual(fx.keepsRunning(st('music')), true);
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;

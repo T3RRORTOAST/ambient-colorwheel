@@ -5,7 +5,10 @@
  */
 const C = require('./color');
 
-const EFFECTS = [require('./fx_cycle'), require('./fx_fade'), require('./fx_breathe')];
+const EFFECTS = [
+    require('./fx_cycle'), require('./fx_fade'), require('./fx_breathe'), require('./fx_rpm'),
+    require('./fx_speed'), require('./fx_mode'), require('./fx_dynamics'), require('./fx_music'),
+];
 const byId = {};
 EFFECTS.forEach((e) => { byId[e.id] = e; });
 
