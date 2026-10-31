@@ -260,6 +260,49 @@ test('fx breathe: full brightness at the start, depth at half the period', () =>
     assert.deepStrictEqual(run('breathe', 2).upper, RED);
 });
 
+/* ---------- inputs.js ---------- */
+test('inputs: car values pass, bad ones are null; mode and music only in demo', () => {
+    const { readInputs } = app('inputs.js');
+    const live = readInputs({ rpm: 2000, speed: NaN, gLong: 0.1, demo: false }, 0);
+    assert.deepStrictEqual(live, { rpm: 2000, speed: null, gLong: 0.1, gLat: null, mode: null, music: null, demo: false });
+    const demo = readInputs({ rpm: 900, speed: 0, gLong: 0, gLat: 0, demo: true }, 0);
+    assert.strictEqual(demo.mode, 'eco');
+    assert.ok(demo.music >= 0 && demo.music <= 1);
+    assert.strictEqual(readInputs({ demo: true }, 25).mode, 'comfort');
+    assert.strictEqual(readInputs({ demo: true }, 45).mode, 'sport');
+    assert.strictEqual(readInputs(null, 0).rpm, null);
+});
+
+/* ---------- effect loop ---------- */
+test('loop: the fixed colours without an effect, the effect\'s frame with one, time from its start', async () => {
+    const fx = app('fx.js'), clk = fakeClock();
+    const st = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    const frames = [];
+    const loop = fx.createLoop({ getState: () => st.get(), readInputs: () => ({}), sink: (f) => frames.push(f), clock: clk, hz: 20 });
+    assert.deepStrictEqual(loop.start().upper, RED);
+    st.setEffect('cycle');
+    await clk.advance(50);                      // the effect starts at this tick
+    assert.deepStrictEqual(frames[frames.length - 1].upper, RED);
+    await clk.advance(20000);                   // 20 s into a 60 s turn
+    assert.deepStrictEqual(loop.frame().upper, GREEN);
+    st.setEffect('breathe');
+    await clk.advance(50);
+    near(loop.frame().brightness, 0.8);         // a new effect starts at its own beginning
+    loop.stop();
+    const n = frames.length;
+    await clk.advance(1000);
+    assert.strictEqual(frames.length, n);
+});
+test('loop: an effect without its data pauses on the fixed colours and says why', () => {
+    const fx = app('fx.js');
+    fx.byId.rpm = { id: 'rpm', needs: ['rpm'], params: [] };
+    const st = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    st.setEffect('rpm');
+    const loop = fx.createLoop({ getState: () => st.get(), readInputs: () => ({ rpm: null }), sink() {}, clock: fakeClock() });
+    assert.deepStrictEqual(loop.tick().upper, RED);
+    assert.strictEqual(loop.why(), 'Daten nicht verfügbar');
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;

@@ -59,4 +59,33 @@ function formatParam(p, v) {
     return v.toFixed(decimals(p.step)).replace('.', ',') + (p.unit ? ' ' + p.unit : '');
 }
 
-module.exports = { EFFECTS, byId, paramsOf, baseOf, availability, keepsRunning, stepParam, formatParam };
+/**
+ * The loop that turns the state into the frame the lights get, hz times a second: the running effect's
+ * frame (time from its start; mem cleared at every start), else the fixed colours, also while the
+ * effect has no data. sink(frame) gets every frame; the light sender drops unchanged ones.
+ */
+function createLoop(o) {
+    const clock = o.clock || { now: Date.now, setInterval, clearInterval };
+    const hz = o.hz || 20;
+    let timer = null, id = null, t0 = 0, mem = {}, last = null, why = null;
+    function tick() {
+        const st = o.getState(), base = baseOf(st), inputs = o.readInputs();
+        if (st.effect !== id) { id = st.effect; t0 = clock.now(); mem = {}; }
+        const e = id ? byId[id] : null;
+        let frame = { upper: base.upper, lower: base.lower, brightness: base.brightness };
+        why = e ? availability(e, inputs, base) : null;
+        if (e && !why) frame = e.run((clock.now() - t0) / 1000, inputs, paramsOf(e, st.params[e.id]), base, mem);
+        last = frame;
+        o.sink(frame);
+        return frame;
+    }
+    return {
+        tick,
+        start() { if (timer === null) timer = clock.setInterval(tick, 1000 / hz); return tick(); },
+        stop() { if (timer !== null) clock.clearInterval(timer); timer = null; },
+        frame: () => last,
+        why: () => why,
+    };
+}
+
+module.exports = { EFFECTS, byId, paramsOf, baseOf, availability, keepsRunning, stepParam, formatParam, createLoop };
