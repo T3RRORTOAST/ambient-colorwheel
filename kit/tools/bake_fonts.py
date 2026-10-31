@@ -13,9 +13,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, '..', 'runtime', 'fonts')
-FONTDIR = '/usr/share/fonts/truetype/ubuntu'
+FONTDIR = os.environ.get('UBUNTU_FONT_DIR', '/usr/share/fonts/truetype/ubuntu')
+# bumped whenever the atlases change: the renderer keys its glyph textures by family, size and this
+CACHE_KEY = 'de1'
 
-TEXT = ''.join(chr(c) for c in range(32, 127)) + '°μ│·–—…×±²³€↑↓→←✓✕'
+TEXT = ''.join(chr(c) for c in range(32, 127)) + '°μ│·–—…×±²³€↑↓→←✓✕' + 'äöüÄÖÜß'
 DIGITS = '0123456789.,:-+%°/ ' + 'kmhKMHrpmbarpsiVNCFgsxµRPDSWLOT'
 GEAR = '0123456789NRPDSM-'
 
@@ -83,7 +85,7 @@ def bake(fname, var, size, charset):
 def main():
     os.makedirs(OUT, exist_ok=True)
     for fam, (fname, var, sizes) in FAMILIES.items():
-        data = {'family': fam, 'source': fname, 'sizes': [bake(fname, var, s, cs) for s, cs in sizes]}
+        data = {'family': fam, 'source': fname, 'cacheKey': CACHE_KEY, 'sizes': [bake(fname, var, s, cs) for s, cs in sizes]}
         p = os.path.join(OUT, fam + '.json')
         json.dump(data, open(p, 'w', encoding='utf-8', newline='\n'), separators=(',', ':'))
         print(f'{fam}: {[s for s, _ in sizes]} -> {os.path.getsize(p) // 1024} KiB')
