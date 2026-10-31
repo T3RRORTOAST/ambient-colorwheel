@@ -186,6 +186,163 @@ test('light: backends - simulated is the only one unlocked in version 1', async 
     assert.strictEqual(light.createBackend('nonsense').name, 'sim');
 });
 
+/* ---------- state.js ---------- */
+const manualTimers = () => { const t = { fn: null }; t.setTimeout = (fn) => { t.fn = fn; return 1; }; t.clearTimeout = () => { t.fn = null; }; return t; };
+test('state: defaults without a file, no warning', () => {
+    const warns = [];
+    const s = app('state.js').createState(tmpFile(), { log: { warn: (m) => warns.push(m), info() {} } });
+    const st = s.get();
+    assert.deepStrictEqual([st.upper, st.lower, st.brightness, st.zone, st.effect, st.favs], [{ h: 0, s: 1 }, { h: 220, s: 1 }, 0.8, 'upper', null, []]);
+    assert.deepStrictEqual(warns, []);
+});
+test('state: a broken file gives the defaults and a warning, no crash', () => {
+    const f = tmpFile(), warns = [];
+    fs.writeFileSync(f, '{ not json');
+    const s = app('state.js').createState(f, { log: { warn: (m) => warns.push(m), info() {} } });
+    assert.strictEqual(s.get().brightness, 0.8);
+    assert.strictEqual(warns.length, 1);
+});
+test('state: saved 500 ms after the last change (temp file + rename) and loaded again', () => {
+    const f = tmpFile(), timers = manualTimers();
+    const { createState } = app('state.js');
+    const s = createState(f, { timers });
+    s.setColor('upper', { h: 30, s: 0.5 });
+    s.setBrightness(0.6);
+    assert.ok(!fs.existsSync(f), 'not before the timer');
+    timers.fn();
+    assert.ok(fs.existsSync(f) && !fs.existsSync(f + '.tmp'));
+    const again = createState(f).get();
+    assert.deepStrictEqual([again.upper, again.brightness], [{ h: 30, s: 0.5 }, 0.6]);
+});
+test('state: flush saves at once', () => {
+    const f = tmpFile();
+    const s = app('state.js').createState(f, { timers: manualTimers() });
+    s.setZone('lower');
+    s.flush();
+    assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).zone, 'lower');
+});
+test('state: values are kept in range', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    s.setColor('upper', { h: -30, s: 3 });
+    s.setBrightness(5);
+    assert.deepStrictEqual(s.get().upper, { h: 330, s: 1 });
+    assert.strictEqual(s.get().brightness, 1);
+    s.setBrightness(0);
+    assert.strictEqual(s.get().brightness, 0.05);
+});
+test('state: swap and same', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    s.swap();
+    assert.deepStrictEqual([s.get().upper.h, s.get().lower.h], [220, 0]);
+    s.setZone('lower');
+    s.same();
+    assert.deepStrictEqual(s.get().upper, s.get().lower);
+});
+test('state: at most 8 favourites; apply; delete resets effect settings that point at it or later', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    for (let i = 0; i < 8; i++) { s.setColor('upper', { h: i * 10, s: 1 }); assert.strictEqual(s.addFav(), i); }
+    assert.strictEqual(s.addFav(), -1);
+    s.applyFav(3);
+    assert.strictEqual(s.get().upper.h, 30);
+    s.setParam('mode', 'favEco', 0);
+    s.setParam('mode', 'favSport', 2);
+    s.setParam('fade', 'count', 3);
+    s.removeFav(1);
+    assert.strictEqual(s.get().favs.length, 7);
+    assert.deepStrictEqual(s.get().params, { mode: { favEco: 0, favSport: -1 }, fade: { count: 3 } });
+    assert.strictEqual(s.param('mode', 'favEco', -1), 0);
+    assert.strictEqual(s.param('cycle', 'period', 60), 60);
+});
+test('state: listeners hear every change', () => {
+    const s = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    let n = 0;
+    s.onChange(() => n++);
+    s.setZone('lower'); s.swap(); s.setEffect('cycle');
+    assert.strictEqual(n, 3);
+    assert.strictEqual(s.get().effect, 'cycle');
+});
+
+/* ---------- effects: helpers ---------- */
+const RED = [255, 0, 0], BLUE = [0, 0, 255], GREEN = [0, 255, 0];
+const base0 = (o) => Object.assign({ upper: RED, lower: BLUE, brightness: 0.8, favs: [] }, o || {});
+const run = (id, t, inputs, params, base, mem) => {
+    const fx = app('fx.js'), e = fx.byId[id];
+    return e.run(t, inputs || {}, fx.paramsOf(e, params), base || base0(), mem || {});
+};
+
+/* ---------- fx.js ---------- */
+test('fx: registry, defaults and base', () => {
+    const fx = app('fx.js');
+    assert.deepStrictEqual(fx.EFFECTS.slice(0, 3).map((e) => e.id), ['cycle', 'fade', 'breathe']);
+    assert.deepStrictEqual(fx.paramsOf(fx.byId.cycle, { period: 30 }), { period: 30, zones: 'same' });
+    const st = app('state.js').createState(tmpFile(), { timers: manualTimers() });
+    st.addFav();
+    const b = fx.baseOf(st.get());
+    assert.deepStrictEqual([b.upper, b.lower, b.brightness, b.favs], [[255, 0, 0], [0, 85, 255], 0.8, [{ upper: [255, 0, 0], lower: [0, 85, 255] }]]);
+});
+test('fx: stepping settings (tap wraps, the knob stops at the ends)', () => {
+    const fx = app('fx.js');
+    const period = fx.byId.cycle.params[0], zones = fx.byId.cycle.params[1];
+    assert.strictEqual(fx.stepParam(period, 60, 1, 0, true), 70);
+    assert.strictEqual(fx.stepParam(period, 300, 1, 0, true), 10);
+    assert.strictEqual(fx.stepParam(period, 300, 1, 0, false), 300);
+    assert.strictEqual(fx.stepParam(period, 10, -3, 0, false), 10);
+    assert.strictEqual(fx.stepParam(zones, 'same', 1, 0, true), 'offset');
+    assert.strictEqual(fx.stepParam(zones, 'offset', 1, 0, true), 'same');
+    assert.strictEqual(fx.stepParam(zones, 'offset', 1, 0, false), 'offset');
+    const fav = { key: 'favEco', type: 'fav', default: -1 };
+    assert.strictEqual(fx.stepParam(fav, -1, 1, 2, true), 0);
+    assert.strictEqual(fx.stepParam(fav, 1, 1, 2, true), -1);
+    assert.strictEqual(fx.stepParam(fav, 5, 1, 2, true), 0);       // a deleted favourite counts as Standard
+    const g = { type: 'range', min: 0.3, max: 0.8, step: 0.1 };
+    assert.strictEqual(fx.stepParam(g, 0.3, 1, 0, false), 0.4);
+});
+test('fx: settings as text', () => {
+    const fx = app('fx.js');
+    assert.strictEqual(fx.formatParam(fx.byId.cycle.params[0], 60), '60 s');
+    assert.strictEqual(fx.formatParam(fx.byId.cycle.params[1], 'offset'), 'Versetzt');
+    assert.strictEqual(fx.formatParam({ type: 'range', step: 0.1, unit: 'g' }, 0.5), '0,5 g');
+    assert.strictEqual(fx.formatParam({ type: 'fav' }, -1), 'Standard');
+    assert.strictEqual(fx.formatParam({ type: 'fav' }, 2), 'Favorit 3');
+});
+test('fx: availability (missing data, too few favourites)', () => {
+    const fx = app('fx.js');
+    assert.strictEqual(fx.availability(fx.byId.cycle, {}, base0()), null);
+    assert.strictEqual(fx.availability(fx.byId.fade, {}, base0()), 'Mindestens 2 Favoriten nötig');
+    assert.strictEqual(fx.availability(fx.byId.fade, {}, base0({ favs: [{ upper: RED, lower: RED }, { upper: BLUE, lower: BLUE }] })), null);
+    assert.strictEqual(fx.availability({ needs: ['rpm'], params: [] }, { rpm: null }, base0()), 'Daten nicht verfügbar');
+});
+test('fx: which effects go on when the colours change', () => {
+    const fx = app('fx.js');
+    const st = (effect, params) => ({ effect, params: params || {} });
+    assert.strictEqual(fx.keepsRunning(st(null)), false);
+    assert.strictEqual(fx.keepsRunning(st('cycle')), false);
+    assert.strictEqual(fx.keepsRunning(st('fade')), false);
+    assert.strictEqual(fx.keepsRunning(st('breathe')), true);
+});
+
+/* ---------- time-based effects ---------- */
+test('fx cycle: runs through the wheel, offset puts the lower zone half a turn on', () => {
+    assert.deepStrictEqual(run('cycle', 0).upper, RED);
+    assert.deepStrictEqual(run('cycle', 20, {}, { period: 60 }).upper, GREEN);
+    const f = run('cycle', 0, {}, { zones: 'offset' });
+    assert.deepStrictEqual([f.upper, f.lower, f.brightness], [RED, [0, 255, 255], 0.8]);
+});
+test('fx fade: holds, blends, wraps', () => {
+    const b = base0({ favs: [{ upper: RED, lower: RED }, { upper: BLUE, lower: BLUE }, { upper: GREEN, lower: GREEN }] });
+    const p = { count: 2, hold: 5, trans: 2 };
+    assert.deepStrictEqual(run('fade', 1, {}, p, b).upper, RED);
+    assert.deepStrictEqual(run('fade', 6, {}, p, b).upper, [128, 0, 128]);
+    assert.deepStrictEqual(run('fade', 7.5, {}, p, b).upper, BLUE);
+    assert.deepStrictEqual(run('fade', 14.5, {}, p, b).upper, RED);
+    assert.deepStrictEqual(run('fade', 15, {}, Object.assign({}, p, { count: 3 }), b).upper, GREEN);
+});
+test('fx breathe: full brightness at the start, depth at half the period', () => {
+    near(run('breathe', 0).brightness, 0.8);
+    near(run('breathe', 2, {}, { period: 4, depth: 50 }).brightness, 0.4);
+    assert.deepStrictEqual(run('breathe', 2).upper, RED);
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;
