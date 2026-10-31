@@ -342,6 +342,12 @@ class Display {
         const ring = this._ring();
         let i = ring.findIndex((p) => p.k === this.focusKey);
         if (d && i >= 0 && ring[i].scroll && this._scrollBy(d * 70)) return;
+        // a target that takes the knob (opts.turn): turning changes its value, the focus stays
+        if (d && i >= 0 && ring[i].tgt && ring[i].tgt.turn) {
+            try { ring[i].tgt.turn(d); } catch (e) { this.log.error('turn', e); }
+            this.tickHandlers.forEach((fn) => fn());
+            return;
+        }
         if (d && ring.length) {
             // the first turn lands on the page shown (or the first place there is)
             const sel = this._tabList().sel;
@@ -415,6 +421,15 @@ class Display {
             const tab = !bar && (this.tabs || []).find(inside);
             const tgt = !bar && !tab && !this.sheet ? (this.pageTargets || []).find(inside) : null;
             const key = bar ? 'bar:' + bar.id : tab ? 'tab:' + tab.i : tgt ? 'tgt:' + tgt.key : this.sheet ? 'sheet:' + (this.sheetTargets || []).findIndex(inside) : null;
+            // a target that follows the finger (opts.drag): every move goes to it until the finger lifts
+            if (phase === 1 && tgt && tgt.drag) this.dragKey = tgt.key;
+            if (this.dragKey) {
+                const q = (this.pageTargets || []).find((p) => p.key === this.dragKey);
+                if (phase === 3) this.dragKey = null;
+                if (q && q.drag) { try { q.drag(phase, x, y); } catch (e) { this.log.error('drag', e); } }
+                this.tickHandlers.forEach((fn) => fn());
+                return;
+            }
             if (phase === 3 && this.dragging && !this.sheet) { this.dragging = false; this.ownDown = null; return; }
             if (phase === 3 && !this.dragging && key && key === this.ownDown && (tab || tgt)) {
                 this.ownDown = null;
