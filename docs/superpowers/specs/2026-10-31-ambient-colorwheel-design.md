@@ -43,7 +43,20 @@ Die App wird vollständig am Mac im Emulator entwickelt. Das ENET-Kabel und Root
 - Neue App unter `apps/gs_ambient/`. Der Ordnername ist die App-ID (`build.py`, `emu.js` und der Store nutzen ihn). Das Präfix `gs_` verhindert Namenskollisionen mit anderen Store-Apps.
 - `mgu-repo.json` bleibt wie im Upstream (`apps/*`, `app.json`). Der Store baut die App auf der Headunit mit dem SDK aus dem Auto. Wir brauchen das BMW-SDK nie selbst.
 - Für den Emulator liegt ein Platzhalter `oap-sdk/` (leeres `index.js`, `package.json`) im Repo-Wurzelordner. Er steht in `.gitignore`, wird nie committet und nie ins Auto gespielt.
-- Upstream-Dateien (Kit, andere Apps) werden nicht verändert, damit Upstream-Updates konfliktfrei bleiben. Einzige Ausnahme: die neue Testdatei `kit/tools/test_gs_ambient.js`.
+- Upstream-Dateien (Kit, andere Apps) werden möglichst nicht verändert, damit Upstream-Updates konfliktfrei bleiben. Ausnahmen:
+  - neue Testdateien `kit/tools/test_gs_ambient.js` und `kit/tools/test_target_input.js`;
+  - eine kleine Kit-Erweiterung (siehe „Kit-Erweiterung: Ziehen und Drehen“), als Pull Request an Upstream anbietbar;
+  - die Kit-Schriften (`kit/runtime/fonts/*.json`) neu gebacken mit `äöüÄÖÜß` (`kit/tools/bake_fonts.py`: Zeichensatz, Schriftordner per `UBUNTU_FONT_DIR`, `cacheKey`, damit der Renderer keine alten Glyphen-Texturen wiederverwendet). Die mitgelieferten Schriften enthalten nur ASCII; ohne das würden gezeichnete Umlaute als „?“ erscheinen.
+- Die App läuft auf der Headunit unter Node 8: keine Syntax oder Funktionen, die Node 8 nicht kennt (`?.`, `??`, Klassenfelder, `catch` ohne Variable, `Array.prototype.flat`, `Object.fromEntries`).
+
+### Kit-Erweiterung: Ziehen und Drehen
+
+Wenn das Kit den Bildschirm führt (GPU-Renderer mit Touch, Vollbild), gibt es der App nur Tipps und senkrechtes Scrollen weiter, und der Controller bewegt den Fokus zwischen Bedienelementen. Für das Farbrad wird `cv.target(x, y, w, h, run, key, r, opts)` um zwei Optionen erweitert:
+
+- `opts.drag(phase, x, y)`: Ein Finger, der auf diesem Element aufsetzt, wird bis zum Loslassen verfolgt (Phase 1 = aufsetzen, 2 = bewegen, 3 = loslassen; Koordinaten in App-Pixeln). Ein Tipp ist Phase 1 + 3. `run` wird bei Touch dann nicht aufgerufen, beim Controller-Drücken schon.
+- `opts.turn(d)`: Steht der Controller-Fokus auf diesem Element, ändert Drehen dessen Wert (`d` = Rastungen, + = rechts) statt den Fokus zu bewegen. Kippen bewegt den Fokus weiter wie gewohnt.
+
+Geändert werden nur `kit/runtime/record.js` (`target`) und `kit/runtime/display.js` (`_touch`, `_ccu`).
 
 ### Dateien der App
 
@@ -62,22 +75,22 @@ Die App wird vollständig am Mac im Emulator entwickelt. Das ENET-Kabel und Root
 | `light_sim.js` | simulierte Lichtsteuerung, sendet nichts (Standard) | – |
 | `light_profile.js` | Weg A, gesperrt | `ctx.signals` |
 | `light_bdc.js` | Weg B, gesperrt | `kit/runtime/diag.js` |
-| `ui.js` | Kopfzeile mit Status, Reiter, gemeinsame Zeichenhilfen | Kit-UI |
-| `ui_color.js`, `ui_effects.js`, `ui_favs.js` | die drei Reiter | `ui.js`, `color.js`, `state.js` |
-| `controller.js` | iDrive-Controller-Belegung je Reiter | `ctx.controller` |
+| `ui.js` | Kopfzeile mit Status-Abzeichen, Reiter, Aktionen, Zeichenschleife | Kit-UI, `ui_*.js` |
+| `ui_parts.js` | gemeinsame Bedienelemente: Knopf (`pill`), Schieberegler (`slider`) | Kit-UI |
+| `ui_color.js`, `ui_effects.js`, `ui_favs.js` | die drei Reiter; Touch und Controller über `cv.target` mit `drag`/`turn` | `ui_parts.js`, `color.js`, `fx.js` |
 
 ### Effekt-Schnittstelle
 
-Jeder Effekt ist eine reine Funktion ohne Nebenwirkungen:
+Jeder Effekt ist eine Funktion ohne Nebenwirkungen außerhalb seines eigenen Notizobjekts `mem` (nur Fahrdynamik braucht es, für die Dauer des Aufleuchtens; es wird bei jedem Effektstart geleert):
 
 ```
-effect(t, inputs, params, base) -> { upper: RGB, lower: RGB, brightness: 0..1 }
+effect.run(t, inputs, params, base, mem) -> { upper: RGB, lower: RGB, brightness: 0..1 }
 ```
 
 - `t`: Zeit in Sekunden seit Effektstart.
 - `inputs`: `{ rpm, speed, gLong, gLat, mode, music }`; nicht verfügbare Werte sind `null`.
 - `params`: die Regler des Effekts.
-- `base`: die Farben und die Helligkeit aus dem Reiter „Farbe“.
+- `base`: die Farben und die Helligkeit aus dem Reiter „Farbe“ sowie die Favoriten, alles als RGB.
 
 Jeder Effekt meldet außerdem, welche `inputs` er braucht. Fehlt einer, gilt der Effekt als „Daten nicht verfügbar“.
 
@@ -110,9 +123,9 @@ capabilities                         // { freeColor, brightness }
 
 ### Einstellungen (`app.json`)
 
-- **Lichtsteuerung:** „Simuliert (sicher)“ ist Standard und in Version 1 die einzige wählbare Option. „Profil umschalten“ und „BDC-Stellgliedtest“ erscheinen als „gesperrt, noch nicht am Auto geprüft“.
+- **Lichtsteuerung:** „Simuliert (sicher)“ ist Standard. „Profil umschalten“ und „BDC-Stellgliedtest“ stehen mit dem Zusatz „gesperrt, noch nicht am Auto geprüft“ in der Liste. Das Kit-Einstellungsmenü kann keine Optionen ausgrauen; wählt man sie trotzdem, sendet die App nichts und zeigt „GESPERRT“.
 - **Demo-Daten:** Auto / Immer / Nie, wie in den anderen Kit-Apps.
-- **Renderer:** wie in den anderen Kit-Apps.
+- **Bildschirm-Layout** und **Renderer:** wie in den anderen Kit-Apps.
 
 ## Bedienung
 
@@ -121,7 +134,7 @@ capabilities                         // { freeColor, brightness }
 - **Farbe:**
   - Antippen der oberen oder unteren Linie in der Innenraum-Vorschau wählt die Zone, die gewählte ist weiß umrandet.
   - Tippen oder Ziehen auf dem Farbrad setzt deren Farbe: Winkel = Farbton, Abstand zur Mitte = Sättigung (innen weißlich, außen kräftig).
-  - Helligkeitsregler.
+  - Regler für Sättigung (der gewählten Zone) und Helligkeit; Tippen oder Ziehen auf dem Regler.
   - „Tauschen“ vertauscht oben und unten. „Gleich“ übernimmt die Farbe der gewählten Zone für die andere.
   - Ändert der Nutzer eine Farbe, während ein Effekt läuft: Effekte, die die Grundfarben nutzen (Atmen, Musik, Fahrdynamik, Geschwindigkeit im Modus Helligkeit), laufen mit den neuen Farben weiter. Alle anderen werden beendet.
 - **Effekte:**
@@ -136,18 +149,25 @@ capabilities                         // { freeColor, brightness }
 
 ### iDrive-Controller
 
-| Reiter | Drehen | Drücken | Kippen hoch/runter | Kippen links/rechts |
-|---|---|---|---|---|
-| Farbe | Farbton (bzw. Helligkeit, wenn fokussiert) | Fokus: oben → unten → Helligkeit | Sättigung | Reiter wechseln |
-| Effekte | Kachel wählen, in der Leiste: Regler ändern | Kachel starten / Regler wählen | zwischen Kacheln und Leiste | Reiter wechseln |
-| Favoriten | Platz wählen | anwenden bzw. speichern auf leerem Platz | – | Reiter wechseln |
+Der Controller folgt dem Fokus-Modell des Kits, wie in allen Kit-Apps: Kippen bewegt den Fokus zum nächsten Bedienelement in diese Richtung (nach oben bis zu den Reitern; links am Rand = zurück), Drücken löst das fokussierte Element aus. Drehen bewegt den Fokus weiter, außer auf Elementen mit eigenem Drehwert (`opts.turn`):
 
-Die Controller-Steuerung nutzt `ctx.controller.grab/onInput` und braucht `mgu-inputgate` (wird über `mgu-repo.json` vom Store mitinstalliert). Ohne sie bedient der Controller die normale iDrive-Knopfleiste unter dem Bild, die App bleibt bedienbar.
+| Element | Drehen | Drücken |
+|---|---|---|
+| Farbrad | Farbton der gewählten Zone (5° pro Rastung) | Zone wechseln (oben ↔ unten) |
+| Linie oben / unten in der Vorschau | Fokus weiter | diese Zone wählen |
+| Regler Sättigung / Helligkeit | Wert (5 % pro Rastung) | – |
+| Effekt-Kachel | Fokus weiter | Effekt starten |
+| Regler in der Effekt-Leiste | Wert einen Schritt (ohne Umlauf) | nächster Wert (mit Umlauf) |
+| Favoriten-Platz | Fokus weiter | anwenden; leerer erster Platz: aktuelle Farben speichern |
+| Knöpfe | Fokus weiter | auslösen |
+
+Die Kit-Steuerung braucht `mgu-inputgate` (wird über `mgu-repo.json` vom Store mitinstalliert). Ohne sie funktioniert Touch weiter, der Controller bleibt beim HMI. Ohne Vollbild mit GPU-Renderer (Software-Pfad oder Layout „Standard“) zeigt die App die Seiten, aber nur die HMI-Knöpfe „Nächste Seite“ und „Einstellungen“ sind bedienbar; ein Hinweis unten auf der Seite sagt das.
 
 ### Status und Fehlerverhalten
 
-- **Abzeichen in der Kopfzeile:** „SIMULIERT“, „AKTIV“ oder „FEHLER“, bei Fehler mit kurzer Ursache (zum Beispiel „BDC lehnt ab“).
-- **Ablehnung durch das Auto:** erneut senden mit wachsender Pause (0,5 s, 1 s, 2 s, 4 s). Nach 4 Fehlschlägen in Folge Stopp, „FEHLER“, Effekt pausiert. Erneuter Versuch erst nach einer Bedienung durch den Nutzer.
+- **Abzeichen in der Kopfzeile:** „SIMULIERT“, „AKTIV“, „GESPERRT“ oder „FEHLER“, bei Fehler mit kurzer Ursache (zum Beispiel „BDC lehnt ab“).
+- **Ablehnung durch das Auto:** erneut senden nach wachsender Pause (0,5 s, dann 1 s, dann 2 s). Der 4. Fehlschlag in Folge stoppt das Senden: „FEHLER“, Effekt pausiert. Erneuter Versuch erst nach einer Bedienung durch den Nutzer.
+- **Gesperrter Weg gewählt:** es wird gar nichts gesendet (auch kein Versuch), Abzeichen „GESPERRT“.
 - **Beim Start:** letzten Zustand laden. Läuft eine echte Lichtsteuerung, Farben und Effekt sofort wieder anwenden. Kaputte oder fehlende Speicherdatei: Standardwerte, Warnung im Log, kein Absturz.
 - **Beim Beenden:** `light.release()`, falls der Weg es braucht.
 
@@ -158,7 +178,7 @@ Alle Effekte beziehen sich auf die Farben aus dem Reiter „Farbe“, außer wo 
 | Effekt | Verhalten | Regler (Standard) |
 |---|---|---|
 | Farbverlauf | wandert mit voller Sättigung durch das ganze Farbrad | Umlaufzeit 10 s – 5 min (60 s); oben/unten gleich oder versetzt (versetzt = 180°) |
-| Überblenden | weicher Wechsel zwischen 2–3 Favoriten | Favoriten-Auswahl (die ersten zwei), Haltezeit 1–30 s (5 s), Übergang 1–10 s (2 s) |
+| Überblenden | weicher Wechsel zwischen den ersten 2 oder 3 Favoriten (Reihenfolge im Favoriten-Reiter) | Anzahl 2/3 (2), Haltezeit 1–30 s (5 s), Übergang 1–10 s (2 s) |
 | Atmen | Helligkeit pulsiert sinusförmig, Farben bleiben | Periode 2–10 s (4 s), Tiefe 10–80 % (50 %) |
 | Drehzahl | Blau → Grün → Rot von Leerlauf (800/min) bis Schaltpunkt | Schaltpunkt 3000–7000/min (6500), Blinken am Schaltpunkt (an), Bereich beide/nur oben (beide) |
 | Geschwindigkeit | Farbe Blau → Rot oder Helligkeit 20–100 % über das Tempo | Skalenende 50–250 km/h (200), Modus Farbe/Helligkeit (Farbe) |
@@ -167,7 +187,8 @@ Alle Effekte beziehen sich auf die Farben aus dem Reiter „Farbe“, außer wo 
 | Musik | Helligkeit folgt dem Pegel | Empfindlichkeit 1–10 (5) |
 
 - Überblenden braucht mindestens 2 Favoriten, sonst ist die Kachel ausgegraut mit „Mindestens 2 Favoriten nötig“.
-- Fahrmodus ohne zugeordneten Favoriten nutzt: Eco Pro = Blau, Comfort = Grundfarben, Sport = Rot.
+- Fahrmodus ohne zugeordneten Favoriten („Standard“) nutzt: Eco Pro = Blau, Comfort = Grundfarben, Sport = Rot.
+- Wird ein Favorit gelöscht, setzt die App Effekt-Regler, die auf diesen oder einen späteren Favoriten zeigen, auf „Standard“ zurück (Regler-Schlüssel, die mit `fav` beginnen).
 - Fahrdynamik zeigt nur die Stärke, weil es nur die Zonen oben und unten gibt, keine Seiten.
 - Fahrmodus und Musik haben vorerst keine Datenquelle im Auto. Ihre Kacheln sind am Auto ausgegraut, bis eine Quelle gefunden ist. Mit Demo-Daten (Emulator) laufen sie mit simulierten Werten.
 
@@ -178,8 +199,10 @@ Alle Effekte beziehen sich auf die Farben aus dem Reiter „Farbe“, außer wo 
    - `state.js`: Speichern/Laden, Tauschen, Gleich, Favoriten-Grenze 8, kaputte und fehlende Datei.
    - Jeder Effekt: feste Zeit und feste Fahrdaten ergeben die erwarteten Farben (zum Beispiel Drehzahl am Schaltpunkt = Rot); fehlende Daten werden als „nicht verfügbar“ gemeldet.
    - Lichtsteuerung: Simuliert sendet nichts; gesperrte Wege verweigern; Drosselung auf `maxRate`; Wiederholen mit wachsender Pause und Stopp nach 4 Fehlschlägen, mit künstlicher Uhr.
+   - Seiten: jede Seite auf einem Recorder zeichnen und prüfen, dass die erwarteten Bedienelemente (mit `drag`/`turn`) da sind.
+   - Kit-Erweiterung in `kit/tools/test_target_input.js`: Ziehen und Drehen werden an das Element geleitet, normale Elemente verhalten sich wie vorher.
 2. **Emulator:** `node kit/tools/emu.js gs_ambient`. Maus = Touch, Mausrad = Drehen, Pfeiltasten = Kippen. Fahrdaten aus der Demo-Fahrt oder manuell über die Regler des Emulators.
-3. **Bildschirmfotos** der drei Reiter mit `kit/tools/preview.js` als Vergleich bei späteren Änderungen.
+3. **Bildschirmfotos** der drei Reiter aus dem Emulator (Vollbild-Modus) als Vergleich bei späteren Änderungen, abgelegt unter `docs/screens/`.
 4. **Store-Probe:** `python3 kit/tools/build.py gs_ambient` erzeugt das Paket, und die App wird über `mgu-repo.json` gefunden.
 
 ## Checkliste „Am Auto prüfen“
