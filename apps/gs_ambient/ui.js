@@ -7,7 +7,7 @@ const G = require('./kit/gauges');
 const fx = require('./fx');
 
 const W = 1600, H = 520;
-const PAGES = [require('./ui_color'), require('./ui_effects')];
+const PAGES = [require('./ui_color'), require('./ui_effects'), require('./ui_favs')];
 const BADGE = { simuliert: ['SIMULIERT', 'cold'], aktiv: ['AKTIV', 'ok'], fehler: ['FEHLER', 'crit'], gesperrt: ['GESPERRT', 'warn'] };
 
 function badge(st) {

@@ -536,6 +536,29 @@ test('Effekte: the bar has Aus and the running effect\'s settings (tap steps wit
     assert.strictEqual(r.state.get().effect, null);
 });
 
+test('Favoriten: save on the first empty place, apply, delete in edit mode', () => {
+    const r = pageRig({ page: 2 });
+    let by = r.draw();
+    assert.ok(by('fav-0') && by('save') && !by('fav-1') && !by('edit'));
+    by('fav-0').run();                                  // the first empty place saves the current colours
+    assert.strictEqual(r.state.get().favs.length, 1);
+    r.state.setColor('upper', { h: 120, s: 1 });
+    r.state.setEffect('cycle');
+    by = r.draw();
+    by('fav-0').run();                                  // applies it and ends the effect
+    assert.deepStrictEqual([r.state.get().upper.h, r.state.get().effect], [0, null]);
+    by('edit').run();
+    by = r.draw();
+    assert.ok(by('del-0') && !by('save'));
+    by('del-0').run();
+    assert.strictEqual(r.state.get().favs.length, 0);
+});
+test('Favoriten: save is dimmed with 8 favourites', () => {
+    const r = pageRig({ page: 2 });
+    for (let i = 0; i < 8; i++) r.state.addFav();
+    assert.ok(!r.draw()('save'));
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;
