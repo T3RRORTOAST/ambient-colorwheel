@@ -508,6 +508,34 @@ test('Farbe: a colour change ends an effect that does not use the colours', () =
     assert.strictEqual(r.state.get().effect, 'breathe');
 });
 
+test('Effekte: tiles start effects, tiles without data cannot be started', () => {
+    const r = pageRig({ page: 1 });
+    r.state.setColor('upper', { h: 0, s: 1 }); r.state.addFav(); r.state.addFav();
+    let by = r.draw();
+    ['cycle', 'fade', 'breathe', 'rpm', 'speed', 'mode', 'dynamics', 'music'].forEach((id) => assert.ok(by('fx-' + id), 'tile ' + id));
+    const live = pageRig({ page: 1, car: { demo: false } });
+    by = live.draw();
+    assert.ok(by('fx-rpm') && !by('fx-mode') && !by('fx-music') && !by('fx-fade'));
+    by('fx-cycle').run();
+    assert.strictEqual(live.state.get().effect, 'cycle');
+});
+test('Effekte: the bar has Aus and the running effect\'s settings (tap steps with wrap, the knob without)', () => {
+    const r = pageRig({ page: 1 });
+    let by = r.draw();
+    assert.ok(!by('fx-off'), 'Aus is dimmed without an effect');
+    by('fx-cycle').run();
+    by = r.draw();
+    assert.ok(by('fx-off') && by('p-period') && by('p-zones') && by('p-period').turn);
+    by('p-period').run();
+    assert.strictEqual(r.state.get().params.cycle.period, 70);
+    by('p-period').turn(-1);
+    assert.strictEqual(r.state.get().params.cycle.period, 60);
+    by('p-zones').run();
+    assert.strictEqual(r.state.get().params.cycle.zones, 'offset');
+    by('fx-off').run();
+    assert.strictEqual(r.state.get().effect, null);
+});
+
 // ---- run ----
 (async () => {
     let failed = 0;
