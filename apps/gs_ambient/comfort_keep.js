@@ -89,8 +89,8 @@ function maybeSurvey() {
 }
 
 function watchCar() {
-    signals.watch('de.bmw.infotainment.vehicle.VehicleCondition', '1', {
-        statusConditionVehicle: function (v) {
+    signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
+        VehicleCondition: function (v) {
             car.cond = v;
             car.vehicleRaw = typeof v === 'string' ? v : JSON.stringify(v);
             car.vehicleError = null;
@@ -99,14 +99,13 @@ function watchCar() {
         },
     }, log).then(function (sub) { if (sub.error) { car.vehicleError = sub.error; log.info('Fahrzeugzustand nicht da: ' + sub.error); snap(); } });
     signals.watch('de.bmw.infotainment.misc.ComfortFunctionIuK', '1', {
-        statusAmbientLight: function (v) {
-            const on = v === true || v === 1 || (v && (v.on === true || v.mode === 1 || v.status === 1));
-            const off = v === false || v === 0 || (v && (v.on === false || v.mode === 0 || v.status === 0));
+        statusAmbientLightInteriorColour: function (v) {
             car.ambientRaw = typeof v === 'string' ? v : JSON.stringify(v);
-            if (on || off) { car.ambientKnown = true; car.ambientOn = !!on; car.ambientError = null; log.info('Ambiente ' + (car.ambientOn ? 'an' : 'aus')); }
+            car.ambientError = null;
+            log.info('Ambiente ' + car.ambientRaw);
             snap();
         },
-    }, log).then(function (sub) { if (sub.error) { car.ambientError = sub.error; log.info('Ambiente-Status nicht da: ' + sub.error); snap(); } });
+    }, log).then(function (sub) { if (sub.error) { car.ambientError = sub.error; log.info('Menüfarbe nicht da: ' + sub.error); snap(); } });
 }
 
 function tick() {
