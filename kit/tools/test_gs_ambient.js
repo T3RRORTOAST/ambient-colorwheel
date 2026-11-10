@@ -176,14 +176,54 @@ test('light: release hands back and stops sending', async () => {
     await settle(); await settle();
     assert.deepStrictEqual([be.releases, be.calls.length], [1, 0]);
 });
-test('light: backends - simulated is the only one unlocked in version 1', async () => {
+test('light: simulated is the safe default; BDC-Licht needs a link; profile stays locked', async () => {
     const light = app('light.js');
     const sim = light.createBackend('sim'), profile = light.createBackend('profile'), bdc = light.createBackend('bdc');
     assert.deepStrictEqual([sim.kind, sim.validated, sim.maxRate], ['sim', true, 20]);
-    assert.deepStrictEqual([profile.validated, bdc.validated], [false, false]);
-    assert.deepStrictEqual(await bdc.apply(F([1, 2, 3])), { ok: false, reason: 'gesperrt' });
+    assert.deepStrictEqual([bdc.validated, bdc.maxRate, bdc.capabilities.brightness], [true, 2, true]);
+    assert.strictEqual(profile.validated, false);
+    assert.deepStrictEqual(await bdc.apply(F([1, 2, 3])), { ok: false, reason: 'keine Verbindung' });
+    assert.deepStrictEqual(await bdc.survey(), { ok: false, reason: 'keine Verbindung' });
     assert.deepStrictEqual(await profile.apply(F([1, 2, 3])), { ok: false, reason: 'gesperrt' });
     assert.strictEqual(light.createBackend('nonsense').name, 'sim');
+});
+test('comfort: on while someone is in the car and the factory light is on, off when the car is left', () => {
+    const c = app('comfort.js');
+    assert.strictEqual(c.shouldLight({ backend: 'bdc', cond: null, ambientOn: null, ambientKnown: false }), true);
+    assert.strictEqual(c.shouldLight({ backend: 'bdc', cond: 5, ambientOn: true, ambientKnown: true }), true);
+    assert.strictEqual(c.shouldLight({ backend: 'bdc', cond: 10, ambientOn: true, ambientKnown: true }), true);
+    [1, 2, 3].forEach((n) => assert.strictEqual(c.inCar(n), false, 'cond ' + n));
+    assert.strictEqual(c.shouldLight({ backend: 'bdc', cond: 1, ambientOn: true, ambientKnown: true }), false);
+    assert.strictEqual(c.whyNot({ backend: 'bdc', cond: 'PARKEN', ambientOn: true, ambientKnown: true }), 'Auto aus');
+    assert.strictEqual(c.shouldLight({ backend: 'bdc', cond: 8, ambientOn: false, ambientKnown: true }), false);
+    assert.strictEqual(c.whyNot({ backend: 'bdc', cond: 8, ambientOn: false, ambientKnown: true }), 'Ambiente aus');
+    assert.strictEqual(c.shouldLight({ backend: 'sim', cond: 8, ambientOn: true, ambientKnown: true }), false);
+    assert.strictEqual(c.inCar('WOHNEN'), true);
+    assert.deepStrictEqual(c.catalogNames('x "de.bmw.infotainment.misc.ComfortFunctionIuK" "de.bmw.infotainment.vehicle.VehicleCondition" "de.bmw.other.Speed"'),
+        ['de.bmw.infotainment.misc.ComfortFunctionIuK', 'de.bmw.infotainment.vehicle.VehicleCondition']);
+    const dbg = path.join(os.tmpdir(), 'gs-ambient-debug-' + process.pid);
+    fs.mkdirSync(dbg);
+    const files = c.paths(dbg);
+    const saved = c.record(files, { debug: true, catalog: ['de.bmw.x.Comfort'], bdc: { ok: false, reason: 'keine Verbindung' } });
+    assert.strictEqual(saved.debug, true);
+    assert.strictEqual(c.readJson(files.probe).bdc.reason, 'keine Verbindung');
+    assert.ok(fs.readFileSync(files.debug, 'utf8').indexOf('keine Verbindung') > 0);
+    const mirror = c.createMirror(path.join(os.tmpdir(), 'gs-comfort-missing.json'));
+    assert.deepStrictEqual(mirror.liveStatus(), { state: 'aus', reason: 'Dienst nicht gestartet' });
+    return mirror.release();
+});
+test('bdc: modules, zones and the write that holds a colour', () => {
+    const p = app('bdc_proto.js');
+    const uds = [0x62, 0xE3, 0xD1, 0x01, 0, 0, 254, 100, 0, 0, 0, 0, 0, 0x15, 0, 0, 10, 80, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 3, 7, 7, 7, 7];
+    const mods = p.parseModules(uds, 'lin2');
+    assert.deepStrictEqual(mods.map((m) => [m.nad, m.zone]), [[1, 'lower'], [2, 'upper']]);
+    assert.strictEqual(p.sgbdOf([0x62, 0xF1, 0x50, 0x0F, 0x26, 0x80]), '0F2680');
+    assert.strictEqual(p.sgbdOf([0x62, 0xF1, 0x50, 0x0F, 0x20, 0x50]), '0F2050');
+    const planned = p.plan(mods, { upper: [254, 0, 0], lower: [0, 0, 254], brightness: 0.5 });
+    assert.deepStrictEqual(planned[0].bytes, [0xE3, 0xD1, 1, 1, 50, 0, 0, 254, 254]);
+    assert.deepStrictEqual(planned[1].bytes, [0xE3, 0xD1, 2, 1, 50, 254, 0, 0, 254]);
+    assert.deepStrictEqual(p.frameWrite({ bus: 'lin1', nad: 1 }, [255, -4, 10], 150), [0xDA, 0x5E, 1, 1, 100, 254, 0, 10, 254]);
+    assert.deepStrictEqual(p.frameRelease(mods[0]), [0xE3, 0xD1, 1, 0, 0, 0, 0, 0, 0]);
 });
 
 /* ---------- state.js ---------- */
@@ -343,65 +383,13 @@ test('fx breathe: full brightness at the start, depth at half the period', () =>
     assert.deepStrictEqual(run('breathe', 2).upper, RED);
 });
 
-/* ---------- driving and music effects ---------- */
-test('fx: all eight effects, at most three settings each', () => {
+test('fx: the three slow effects, at most three settings each', () => {
     const fx = app('fx.js');
-    assert.deepStrictEqual(fx.EFFECTS.map((e) => e.id), ['cycle', 'fade', 'breathe', 'rpm', 'speed', 'mode', 'dynamics', 'music']);
+    assert.deepStrictEqual(fx.EFFECTS.map((e) => e.id), ['cycle', 'fade', 'breathe']);
     fx.EFFECTS.forEach((e) => {
         assert.ok(e.params.length <= 3, e.id);
         e.params.forEach((p) => assert.ok(p.default !== undefined, e.id + '.' + p.key));
     });
-});
-test('fx rpm: blue at idle, red at the shift point, blinking above it', () => {
-    assert.deepStrictEqual(run('rpm', 0, { rpm: 800 }).upper, [0, 85, 255]);
-    assert.deepStrictEqual(run('rpm', 0, { rpm: 6500 }).upper, RED);
-    assert.deepStrictEqual(run('rpm', 0.2, { rpm: 6600 }).upper, [0, 0, 0]);
-    assert.deepStrictEqual(run('rpm', 0.2, { rpm: 6600 }, { blink: 'off' }).upper, RED);
-    const f = run('rpm', 0, { rpm: 6500 }, { zones: 'upper' });
-    assert.deepStrictEqual([f.upper, f.lower], [RED, BLUE]);
-    const fx = app('fx.js');
-    assert.strictEqual(fx.availability(fx.byId.rpm, { rpm: null }, base0()), 'Daten nicht verfügbar');
-});
-test('fx speed: colour or brightness over the scale', () => {
-    assert.deepStrictEqual(run('speed', 0, { speed: 0 }).upper, [0, 85, 255]);
-    assert.deepStrictEqual(run('speed', 0, { speed: 250 }).lower, RED);
-    const f = run('speed', 0, { speed: 100 }, { mode: 'brightness', max: 200 });
-    assert.deepStrictEqual(f.upper, RED);
-    near(f.brightness, 0.8 * 0.6);
-});
-test('fx mode: favourite per mode, else blue / own colours / red', () => {
-    const b = base0({ favs: [{ upper: GREEN, lower: GREEN }] });
-    assert.deepStrictEqual(run('mode', 0, { mode: 'eco' }, {}, b).upper, [0, 85, 255]);
-    assert.deepStrictEqual(run('mode', 0, { mode: 'comfort' }, {}, b).lower, BLUE);
-    assert.deepStrictEqual(run('mode', 0, { mode: 'sport' }, {}, b).upper, RED);
-    assert.deepStrictEqual(run('mode', 0, { mode: 'sport' }, { favSport: 0 }, b).upper, GREEN);
-});
-test('fx dynamics: flash above the threshold, fading out over 300 ms', () => {
-    const mem = {}, b = base0({ upper: BLUE, lower: BLUE, brightness: 0.5 });
-    const step = (t, g) => run('dynamics', t, { gLong: g, gLat: 0 }, { thresh: 0.5, color: 'red' }, b, mem);
-    assert.deepStrictEqual(step(0, 0.2).upper, BLUE);
-    const hit = step(1, 1.0);
-    assert.deepStrictEqual([hit.upper, hit.brightness], [RED, 1]);
-    const mid = step(1.15, 0);
-    near(mid.upper, [128, 0, 128], 1);
-    near(mid.brightness, 0.75, 1e-6);
-    assert.deepStrictEqual(step(1.4, 0).upper, BLUE);
-});
-test('fx music: brightness follows the level', () => {
-    near(run('music', 0, { music: 0 }).brightness, 0.8 * 0.15);
-    near(run('music', 0, { music: 1 }, { sens: 5 }).brightness, 0.8);
-    near(run('music', 0, { music: 0.25 }, { sens: 10 }).brightness, 0.8 * (0.15 + 0.85 * 0.5));
-});
-test('fx: which driving effects go on when the colours change', () => {
-    const fx = app('fx.js');
-    const st = (effect, params) => ({ effect, params: params || {} });
-    assert.strictEqual(fx.keepsRunning(st('rpm')), false);
-    assert.strictEqual(fx.keepsRunning(st('rpm', { rpm: { zones: 'upper' } })), true);
-    assert.strictEqual(fx.keepsRunning(st('speed')), false);
-    assert.strictEqual(fx.keepsRunning(st('speed', { speed: { mode: 'brightness' } })), true);
-    assert.strictEqual(fx.keepsRunning(st('mode')), false);
-    assert.strictEqual(fx.keepsRunning(st('dynamics')), true);
-    assert.strictEqual(fx.keepsRunning(st('music')), true);
 });
 
 /* ---------- inputs.js ---------- */
@@ -440,10 +428,10 @@ test('loop: the fixed colours without an effect, the effect\'s frame with one, t
 test('loop: an effect without its data pauses on the fixed colours and says why', () => {
     const fx = app('fx.js');
     const st = app('state.js').createState(tmpFile(), { timers: manualTimers() });
-    st.setEffect('rpm');
-    const loop = fx.createLoop({ getState: () => st.get(), readInputs: () => ({ rpm: null }), sink() {}, clock: fakeClock() });
+    st.setEffect('fade');
+    const loop = fx.createLoop({ getState: () => st.get(), readInputs: () => ({}), sink() {}, clock: fakeClock() });
     assert.deepStrictEqual(loop.tick().upper, RED);
-    assert.strictEqual(loop.why(), 'Daten nicht verfügbar');
+    assert.strictEqual(loop.why(), 'Mindestens 2 Favoriten nötig');
 });
 
 /* ---------- pages ---------- */
@@ -477,6 +465,7 @@ test('pages: badge per sender state', () => {
     assert.deepStrictEqual(ui.badge({ state: 'simuliert', reason: null }), { text: 'SIMULIERT', color: 'cold' });
     assert.deepStrictEqual(ui.badge({ state: 'fehler', reason: 'BDC lehnt ab' }), { text: 'FEHLER · BDC lehnt ab', color: 'crit' });
     assert.deepStrictEqual(ui.badge({ state: 'gesperrt', reason: 'x' }), { text: 'GESPERRT', color: 'warn' });
+    assert.deepStrictEqual(ui.badge({ state: 'aus', reason: 'Auto aus' }), { text: 'AUS · Auto aus', color: 'warn' });
 });
 test('Farbe: the wheel follows the finger and the knob, the lines pick the zone, sliders turn', () => {
     const page = app('ui_color.js'), r = pageRig();
@@ -512,10 +501,10 @@ test('Effekte: tiles start effects, tiles without data cannot be started', () =>
     const r = pageRig({ page: 1 });
     r.state.setColor('upper', { h: 0, s: 1 }); r.state.addFav(); r.state.addFav();
     let by = r.draw();
-    ['cycle', 'fade', 'breathe', 'rpm', 'speed', 'mode', 'dynamics', 'music'].forEach((id) => assert.ok(by('fx-' + id), 'tile ' + id));
+    ['cycle', 'fade', 'breathe'].forEach((id) => assert.ok(by('fx-' + id), 'tile ' + id));
     const live = pageRig({ page: 1, car: { demo: false } });
     by = live.draw();
-    assert.ok(by('fx-rpm') && !by('fx-mode') && !by('fx-music') && !by('fx-fade'));
+    assert.ok(by('fx-cycle') && by('fx-breathe') && !by('fx-fade'));
     by('fx-cycle').run();
     assert.strictEqual(live.state.get().effect, 'cycle');
 });

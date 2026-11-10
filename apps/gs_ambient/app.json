@@ -1,7 +1,7 @@
 {
   "id": "gs_ambient",
   "title": "Ambient",
-  "description": "Farbrad für die Ambientebeleuchtung: zwei Zonen (oben und unten), Helligkeit, acht Effekte und Favoriten. Version 1 steuert das Licht nur simuliert, bis ein Weg am Auto geprüft ist",
+  "description": "Farbrad für die Ambientebeleuchtung: zwei Zonen (oben und unten), Helligkeit, Farbverlauf, Überblenden, Atmen und Favoriten. Standard ist die Simulation. BDC-Licht schreibt über den bestätigten Kurzzeit-Weg und ein Comfort-Dienst hält die Farbe, nachdem die Oberfläche zu ist, bis das Auto aus ist",
   "version": "0.1.0",
   "vendor": "custom",
   "loggingId": "OAB0",
@@ -12,6 +12,14 @@
     "de.bmw.infotainment.vehicle.CDS2": {
       "statusLongitudinalAccelerationMassCenter": "rs",
       "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.vehicle.VehicleCondition": {
+      "_optional": "Fahrzeugzustand: ohne ihn geht die Farbe nicht von allein aus",
+      "statusConditionVehicle": "rs"
+    },
+    "de.bmw.infotainment.misc.ComfortFunctionIuK": {
+      "_optional": "Werk-Ambiente an oder aus",
+      "statusAmbientLight": "rs"
     }
   },
   "screens": [
@@ -27,12 +35,14 @@
   ],
   "settings": [
     {"key": "light", "label": "Lichtsteuerung", "type": "choice", "default": "sim",
-     "options": [["sim", "Simuliert (sicher)"], ["profile", "Profil umschalten · gesperrt, noch nicht am Auto geprüft"], ["bdc", "BDC-Stellgliedtest · gesperrt, noch nicht am Auto geprüft"]]},
+     "options": [["sim", "Simuliert (sicher)"], ["profile", "Profil umschalten · gesperrt"], ["bdc", "BDC-Licht (schreibt ans Auto)"]]},
     {"key": "layout", "label": "Bildschirm-Layout", "type": "choice", "default": "full",
      "options": [["full", "Vollbild"], ["standard", "Standard"]]},
     {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
      "options": [["auto", "GPU 60 fps (Standard)"], ["software", "Software"]]},
     {"key": "demo", "label": "Demo-Daten", "type": "choice", "default": "auto",
-     "options": [["auto", "Auto"], ["on", "Immer"], ["off", "Nie"]]}
+     "options": [["auto", "Auto"], ["on", "Immer"], ["off", "Nie"]]},
+    {"key": "debug", "label": "Debug-Protokoll", "type": "choice", "default": "off",
+     "options": [["off", "Aus"], ["on", "An (schreibt gs_ambient_probe.json)"]]}
   ]
 }

@@ -1,8 +1,8 @@
 # Am Auto prüfen
 
-Was sich nur am Auto klären lässt, bevor eine echte Lichtsteuerung freigeschaltet wird. Reihenfolge bindend:
-jeder Schritt erst, wenn der vorherige erledigt ist. Bis dahin bleibt „Lichtsteuerung“ auf „Simuliert“ und
-`light_profile.js` / `light_bdc.js` haben `validated: false`.
+Was sich nur am Auto klären lässt. „Lichtsteuerung“ steht ab Werk auf „Simuliert“. „BDC-Licht“ ist der
+bestätigte Kurzzeit-Weg (`2E DA5E` / `2E E3D1`) und schreibt erst, wenn der BDC sich als `0F2680` meldet.
+`light_profile.js` bleibt `validated: false`.
 
 1. **Codierungs-Backup der Headunit.** Das Root-Flashen mit idrive7-8-ssh-root löscht die Codierung der
    Headunit und die Digital-Key-Kopplungen.
@@ -11,11 +11,10 @@ jeder Schritt erst, wenn der vorherige erledigt ist. Bis dahin bleibt „Lichtst
 3. **Root einrichten** mit idrive7-8-ssh-root.
 4. **SOME/IP-Katalog nach Licht-Feldern mit Setter durchsuchen** (Weg A, `light_profile.js`):
    `grep -o -i -E '"[A-Za-z0-9_.]*(ambien|interior|innenlicht|lci)[A-Za-z0-9_.]*"' /etc/oap/someip/someip-interfaces.json | sort -u`
-5. **BDC-Beschreibungsdatei** (Tool32 / EdiabasLib) nach `STEUERN`-Jobs für LCI / Ambiente durchsuchen
-   (Weg B, `light_bdc.js`): Job, Datenkennung, Datenformat, Rückgabe der Kontrolle.
-6. **Quellen für Fahrmodus und Musikpegel** im Katalog suchen (Effekte „Fahrmodus“ und „Musik“, `inputs.js`).
-7. **Erst dann einen Weg einzeln testen** (stehendes Auto, Zündung an), Ergebnis festhalten, und den Weg
-   im Code freischalten (`validated: true` mit echter `apply`/`release`), mit Tests wie in
-   `kit/tools/test_gs_ambient.js`.
+5. **Am stehenden Auto, Ambiente an:** in der App „BDC-Licht“ wählen. Schreibt nur, wenn `22 F150`
+   `0F2680` liefert und Lichtmodule gemeldet werden. Der Comfort-Dienst erneuert die Farbe alle 2 Minuten,
+   auch nachdem die Oberfläche zu ist. Geparkt oder Standby gibt sie zurück. Der G22 ist noch nie gelesen worden.
+6. **Profil umschalten** (`light_profile.js`) bleibt gesperrt, bis ein Setter im Katalog gefunden und
+   einzeln geprüft ist.
 
 Nie veröffentlichen: das Platzhalter- oder echte `oap-sdk/`, `dist/`, `*.mgu` (enthalten BMWs SDK).

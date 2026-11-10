@@ -8,11 +8,12 @@ const fx = require('./fx');
 
 const W = 1600, H = 520;
 const PAGES = [require('./ui_color'), require('./ui_effects'), require('./ui_favs')];
-const BADGE = { simuliert: ['SIMULIERT', 'cold'], aktiv: ['AKTIV', 'ok'], fehler: ['FEHLER', 'crit'], gesperrt: ['GESPERRT', 'warn'] };
+const BADGE = { simuliert: ['SIMULIERT', 'cold'], aktiv: ['AKTIV', 'ok'], aus: ['AUS', 'warn'], fehler: ['FEHLER', 'crit'], gesperrt: ['GESPERRT', 'warn'] };
 
 function badge(st) {
     const b = BADGE[st.state] || BADGE.simuliert;
-    return { text: st.state === 'fehler' && st.reason ? b[0] + ' · ' + st.reason : b[0], color: b[1] };
+    const withReason = st.state === 'fehler' || st.state === 'aus';
+    return { text: withReason && st.reason ? b[0] + ' · ' + st.reason : b[0], color: b[1] };
 }
 
 /** What the pages draw from. deps = { state, loop, sender(), inputs() } */

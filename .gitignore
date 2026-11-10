@@ -44,6 +44,11 @@ kit/tools/.font-cache/
 /kit/renderd/core
 /apps/zf8hp/data/
 egs-snapshot*.json
+# BDC color reads (VIN and the car's coding)
+tools/bdc_farben/sicherungen/*.json
 
 # brainstorming companion (local)
 .superpowers/
+
+# the Blitzer page: its source is in ../bmw-blitzer/app, copied here by its pack-app.js
+apps/blitzer/

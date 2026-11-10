@@ -86,4 +86,8 @@ function createState(file, opts) {
     };
 }
 
-module.exports = { createState, MAX_FAVS };
+function readState(file) {
+    try { return sanitize(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch (e) { return null; }
+}
+
+module.exports = { createState, readState, MAX_FAVS };

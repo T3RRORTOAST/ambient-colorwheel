@@ -56,7 +56,10 @@ function createSender(backend, opts) {
             stopped = false; fails = 0; st = { state: okState, reason: null };
             flush();
         },
-        status: () => ({ state: st.state, reason: st.reason }),
+        status: () => {
+            const live = typeof backend.liveStatus === 'function' ? backend.liveStatus() : null;
+            return live || { state: st.state, reason: st.reason };
+        },
         sent: () => sent,
         release() {
             stopped = true;

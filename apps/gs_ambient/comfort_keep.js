@@ -1,0 +1,152 @@
+'use strict';
+/**
+ * comfort_keep.js - the process that keeps the colour on after the screen is gone.
+ * With the debug setting on it also writes gs_ambient_probe.json: the names this car uses,
+ * what the body controller answered, and whether the colour was allowed to stay on.
+ *   node comfort_keep.js <data-dir>
+ */
+const fs = require('fs');
+const comfort = require('./comfort');
+const { readState } = require('./state');
+const fx = require('./fx');
+const light = require('./light');
+const signals = require('./kit/signals');
+
+const CATALOG = '/etc/oap/someip/someip-interfaces.json';
+const dir = process.argv[2];
+if (!dir) { console.error('usage: node comfort_keep.js <data-dir>'); process.exit(2); }
+const p = comfort.paths(dir);
+
+function logLine(m) {
+    try { fs.appendFileSync(p.log, new Date().toISOString() + ' ' + m + '\n'); } catch (e) { /* the dir may be briefly missing */ }
+}
+const log = { info: function (m) { logLine(m); }, warn: function (m) { logLine('warn ' + m); } };
+
+if (comfort.alive(p.pid)) process.exit(0);
+try { fs.writeFileSync(p.pid, String(process.pid)); } catch (e) { log.warn('pid: ' + e.message); }
+
+const car = { cond: null, ambientOn: null, ambientKnown: false, vehicleRaw: null, ambientRaw: null, vehicleError: null, ambientError: null };
+const report = { debug: false, catalog: null, vehicle: null, ambient: null, bdc: null, gate: null, light: null };
+let backend = null, sender = null, loop = null, stopping = false, shown = '';
+let debugOn = false, surveying = false, surveyAt = 0;
+
+function getState() { return readState(p.state); }
+
+function prefs() { return comfort.readJson(p.light) || {}; }
+
+function gate() {
+    return { backend: prefs().light || 'sim', cond: car.cond, ambientOn: car.ambientOn, ambientKnown: car.ambientKnown };
+}
+
+function publish(obj) {
+    const s = JSON.stringify(obj);
+    if (s === shown) return;
+    shown = s;
+    try { comfort.writeJson(p.status, obj); } catch (e) { log.warn('status: ' + e.message); }
+}
+
+function snap() {
+    if (!debugOn) return;
+    report.debug = true;
+    report.vehicle = { error: car.vehicleError, last: car.vehicleRaw, code: comfort.codeOf(car.cond), inCar: comfort.inCar(car.cond) };
+    report.ambient = { error: car.ambientError, last: car.ambientRaw, known: car.ambientKnown, on: car.ambientOn };
+    report.gate = gate();
+    report.gate.why = comfort.whyNot(report.gate);
+    comfort.record(p, report);
+}
+
+function bdc() {
+    if (!backend) backend = light.createBackend('bdc', { signals: signals, log: log });
+    return backend;
+}
+
+function stopWriting() {
+    const s = sender;
+    sender = null;
+    if (loop) { loop.stop(); loop = null; }
+    return s ? s.release() : Promise.resolve();
+}
+
+function scanCatalog() {
+    let text = null, error = null;
+    try { text = fs.readFileSync(CATALOG, 'utf8'); } catch (e) { error = String(e.message || e); }
+    report.catalog = error ? { error: error } : comfort.catalogNames(text);
+    log.info('Katalog ' + (error || (report.catalog.length + ' Namen')));
+}
+
+function maybeSurvey() {
+    if (!debugOn || surveying) return;
+    if (report.bdc && report.bdc.ok && Date.now() - surveyAt < 300000) return;
+    if (surveyAt && Date.now() - surveyAt < 20000) return;
+    surveying = true;
+    surveyAt = Date.now();
+    bdc().survey().then(function (r) {
+        surveying = false;
+        report.bdc = r;
+        log.info('Probe ' + JSON.stringify({ ok: r.ok, sgbd: r.sgbd, reason: r.reason || null, modules: r.modules ? r.modules.length : 0 }));
+        snap();
+    }).catch(function (e) { surveying = false; log.warn('Probe ' + e.message); });
+}
+
+function watchCar() {
+    signals.watch('de.bmw.infotainment.vehicle.VehicleCondition', '1', {
+        statusConditionVehicle: function (v) {
+            car.cond = v;
+            car.vehicleRaw = typeof v === 'string' ? v : JSON.stringify(v);
+            car.vehicleError = null;
+            log.info('Fahrzeug ' + car.vehicleRaw);
+            snap();
+        },
+    }, log).then(function (sub) { if (sub.error) { car.vehicleError = sub.error; log.info('Fahrzeugzustand nicht da: ' + sub.error); snap(); } });
+    signals.watch('de.bmw.infotainment.misc.ComfortFunctionIuK', '1', {
+        statusAmbientLight: function (v) {
+            const on = v === true || v === 1 || (v && (v.on === true || v.mode === 1 || v.status === 1));
+            const off = v === false || v === 0 || (v && (v.on === false || v.mode === 0 || v.status === 0));
+            car.ambientRaw = typeof v === 'string' ? v : JSON.stringify(v);
+            if (on || off) { car.ambientKnown = true; car.ambientOn = !!on; car.ambientError = null; log.info('Ambiente ' + (car.ambientOn ? 'an' : 'aus')); }
+            snap();
+        },
+    }, log).then(function (sub) { if (sub.error) { car.ambientError = sub.error; log.info('Ambiente-Status nicht da: ' + sub.error); snap(); } });
+}
+
+function tick() {
+    if (stopping) return;
+    const was = debugOn;
+    debugOn = prefs().debug === true || prefs().debug === 'on';
+    if (debugOn && !was) { report.catalog = null; report.bdc = null; surveyAt = 0; }
+    if (debugOn && !report.catalog) scanCatalog();
+    if (debugOn) maybeSurvey();
+    const g = gate();
+    if (!comfort.shouldLight(g) || !getState()) {
+        const why = comfort.whyNot(g);
+        if (sender) stopWriting();
+        publish(why ? { state: 'aus', reason: why } : { state: 'bereit', reason: null });
+        report.light = why ? { state: 'aus', reason: why } : { state: 'bereit', reason: null };
+        if (debugOn) snap();
+        return;
+    }
+    if (!sender) {
+        sender = light.createSender(bdc(), { log: log });
+        loop = fx.createLoop({ getState: getState, readInputs: function () { return {}; }, sink: function (f) { if (sender) sender.push(f); } });
+        loop.start();
+        log.info('Licht an');
+    }
+    const st = sender.status();
+    publish({ state: st.state, reason: st.reason || null });
+    report.light = { state: st.state, reason: st.reason || null };
+    if (debugOn) snap();
+}
+
+function shutdown() {
+    if (stopping) return;
+    stopping = true;
+    log.info('Ende, Farbe zurück');
+    Promise.resolve(stopWriting()).then(function () { process.exit(0); });
+    setTimeout(function () { process.exit(0); }, 3000);
+}
+
+watchCar();
+setInterval(tick, 250);
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+log.info('comfort keeper läuft');

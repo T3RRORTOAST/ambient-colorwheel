@@ -1,7 +1,7 @@
 'use strict';
 /**
- * ui_effects.js - the Effekte page: eight tiles (a tap starts the effect; one without data is greyed out
- * with the reason) and a bar along the bottom with Aus and the running effect's settings.
+ * ui_effects.js - the Effekte page: one tile per effect (a tap starts it; one without data is greyed
+ * out with the reason) and a bar along the bottom with Aus and the running effect's settings.
  */
 const { withAlpha } = require('./kit/canvas');
 const fx = require('./fx');
@@ -20,7 +20,7 @@ function tile(cv, t, x, y, a, on, act) {
 }
 
 function draw(cv, t, m, act) {
-    const active = m.st.effect;
+    const active = fx.byId[m.st.effect] ? m.st.effect : null;
     m.avail.forEach((a, i) => tile(cv, t, X0 + (i % 4) * (TW + GAP), Y0 + Math.floor(i / 4) * (TH + GAP), a, a.e.id === active, act));
     cv.roundRect(X0, BAR_Y, 4 * TW + 3 * GAP, 108, 14, withAlpha('#ffffff', 0.04));
     let x = X0 + 24;
