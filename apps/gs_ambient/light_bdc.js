@@ -73,7 +73,7 @@ function create(ctx) {
     }
 
     function brief(list) {
-        return list.map(function (m) { return { bus: m.bus, nad: m.nad, loc: '0x' + (m.loc & 255).toString(16).toUpperCase(), zone: m.zone }; });
+        return list.map(function (m) { return { bus: m.bus, nad: m.nad, loc: '0x' + (m.loc & 255).toString(16).toUpperCase(), name: m.name, zone: m.zone }; });
     }
 
     /** Read the identity, both light buses and the colour blocks. Writes nothing. One bus failing leaves the other. */

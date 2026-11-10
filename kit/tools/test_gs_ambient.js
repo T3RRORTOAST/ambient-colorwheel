@@ -217,6 +217,12 @@ test('bdc: modules, zones and the write that holds a colour', () => {
     const uds = [0x62, 0xE3, 0xD1, 0x01, 0, 0, 254, 100, 0, 0, 0, 0, 0, 0x15, 0, 0, 10, 80, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 3, 7, 7, 7, 7];
     const mods = p.parseModules(uds, 'lin2');
     assert.deepStrictEqual(mods.map((m) => [m.nad, m.zone]), [[1, 'lower'], [2, 'upper']]);
+    assert.strictEqual(p.zoneOf(0x08), 'lower');
+    assert.strictEqual(p.zoneOf(0x0F), 'lower');
+    assert.strictEqual(p.zoneOf(0x1D), 'lower');
+    assert.strictEqual(p.zoneOf(0x05), 'upper');
+    assert.strictEqual(p.zoneOf(0x35), 'upper');
+    assert.strictEqual(p.nameOf(0x1D), 'Centre stack tray');
     assert.strictEqual(p.sgbdOf([0x62, 0xF1, 0x50, 0x0F, 0x26, 0x80]), '0F2680');
     assert.strictEqual(p.sgbdOf([0x62, 0xF1, 0x50, 0x0F, 0x20, 0x50]), '0F2050');
     const planned = p.plan(mods, { upper: [254, 0, 0], lower: [0, 0, 254], brightness: 0.5 });

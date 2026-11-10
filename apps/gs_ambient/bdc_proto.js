@@ -12,17 +12,34 @@ const BUSES = [
     { name: 'lin1', read: [0xDA, 0x5F], write: [0xDA, 0x5E] },
     { name: 'lin2', read: [0xE3, 0xD1], write: [0xE3, 0xD1] },
 ];
-// Footwells are the lower zone. Everything else fitted on the car is the upper zone.
-const FOOTWELL = [[0x01, 0x04], [0x23, 0x24]];
+// BDC_G05 location table (the same names Iterio uses). The lower zone on this car is the
+// footwells, the door pockets and the centre trays. Door lines, the dash, the roof and the rest
+// are the upper zone. A location the body controller does not list cannot be written.
+const LOWER = {
+    0x01: 1, 0x02: 1, 0x03: 1, 0x04: 1, 0x23: 1, 0x24: 1,
+    0x08: 1, 0x0B: 1, 0x0F: 1, 0x12: 1, 0x25: 1, 0x26: 1, 0x4D: 1, 0x4E: 1,
+    0x52: 1, 0x54: 1, 0x56: 1, 0x58: 1,
+    0x1D: 1, 0x1E: 1,
+};
+const LOC = {
+    0x01: 'Footwell driver front', 0x02: 'Footwell driver rear', 0x03: 'Footwell passenger front',
+    0x04: 'Footwell passenger rear', 0x05: 'Driver door front line', 0x08: 'Driver door front pocket',
+    0x0B: 'Driver door rear pocket', 0x0C: 'Passenger door front line', 0x0F: 'Passenger door front pocket',
+    0x12: 'Passenger door rear pocket', 0x13: 'Dash line driver', 0x15: 'Dash line centre',
+    0x17: 'Dash line passenger', 0x1D: 'Centre stack tray', 0x1E: 'Console tray',
+    0x23: 'Footwell driver 3rd row', 0x24: 'Footwell passenger 3rd row',
+    0x35: 'Roof front left front', 0x37: 'Roof front right front', 0x3D: 'Light sword left', 0x3E: 'Light sword right',
+};
 
 const cap = (n) => Math.max(0, Math.min(254, Math.round(Number(n) || 0)));
 const hex2 = (n) => (n & 255).toString(16).toUpperCase().padStart(2, '0');
 
 function zoneOf(loc) {
-    for (let i = 0; i < FOOTWELL.length; i++) {
-        if (loc >= FOOTWELL[i][0] && loc <= FOOTWELL[i][1]) return 'lower';
-    }
-    return 'upper';
+    return LOWER[loc] ? 'lower' : 'upper';
+}
+
+function nameOf(loc) {
+    return LOC[loc] || ('Licht 0x' + hex2(loc));
 }
 
 /** 62 F1 50 -> the 6-digit SGBD index, or null. */
@@ -36,7 +53,7 @@ function parseModules(uds, bus) {
     const out = [];
     for (let i = 3, nad = 1; i + 10 <= (uds ? uds.length : 0); i += 10, nad++) {
         if (uds[i] === 0xFF) continue;
-        out.push({ bus: bus, nad: nad, loc: uds[i], zone: zoneOf(uds[i]) });
+        out.push({ bus: bus, nad: nad, loc: uds[i], zone: zoneOf(uds[i]), name: nameOf(uds[i]) });
     }
     return out;
 }
@@ -66,5 +83,5 @@ function plan(mods, frame) {
 
 module.exports = {
     BDC: BDC, SGBD_G05: SGBD_G05, HOLD_S: HOLD_S, RENEW_MS: RENEW_MS, BUSES: BUSES,
-    zoneOf: zoneOf, sgbdOf: sgbdOf, parseModules: parseModules, frameWrite: frameWrite, frameRelease: frameRelease, plan: plan,
+    zoneOf: zoneOf, nameOf: nameOf, sgbdOf: sgbdOf, parseModules: parseModules, frameWrite: frameWrite, frameRelease: frameRelease, plan: plan,
 };
