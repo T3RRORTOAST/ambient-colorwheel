@@ -51,6 +51,31 @@ function makeActions(state, view) {
         },
         applyFav(i) { state.applyFav(i); state.setEffect(null); },
         addFav() { return state.addFav(); },
+        setGroup(i) { state.setGroup(i); view.editFavs = false; },
+        beginNew() {
+            if (state.get().groups.length >= state.MAX_GROUPS) return;
+            view.naming = 'new'; view.draft = ''; view.shift = true;
+        },
+        beginRename() {
+            view.naming = 'rename'; view.draft = state.get().groups[state.get().group].name; view.shift = false;
+        },
+        typeChar(ch) {
+            if (view.draft.length >= 18) return;
+            const c = ch === 'ß' ? 'ß' : (view.shift ? String(ch).toUpperCase() : String(ch).toLowerCase());
+            view.draft += c;
+            if (view.shift) view.shift = false;
+        },
+        backspace() { view.draft = view.draft.slice(0, -1); if (!view.draft) view.shift = true; },
+        toggleShift() { view.shift = !view.shift; },
+        cancelName() { view.naming = null; },
+        commitName() {
+            const name = String(view.draft || '').trim();
+            if (!name) return;
+            if (view.naming === 'new') state.addGroup(name);
+            else state.renameGroup(name);
+            view.naming = null;
+        },
+        deleteGroup(i) { state.deleteGroup(i); },
         removeFav(i) { state.removeFav(i); },
         toggleEdit() { view.editFavs = !view.editFavs; },
     };
@@ -67,14 +92,14 @@ function drawPage(cv, t, deps, view, act) {
 
 function start(ctx, deps) {
     const { ui, log } = ctx;
-    const view = { page: 0, editFavs: false };
+    const view = { page: 0, editFavs: false, naming: null, draft: '', shift: true };
     const act = makeActions(deps.state, view);
     const render = () => {
         const t = ctx.theme(), cv = ctx.canvas(W, H).clear(t.bg);
         drawPage(cv, t, deps, view, act);
         return ui.image('MAIN_GFX', cv);
     };
-    const open = (i) => { view.page = i; view.editFavs = false; return render(); };
+    const open = (i) => { view.page = i; view.editFavs = false; view.naming = null; return render(); };
     ctx.onTab((i) => open(i));
     ui.onClick('BTN_PAGE', () => open((view.page + 1) % PAGES.length));
     ctx.loop('MAIN', 10, render);

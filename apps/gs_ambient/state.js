@@ -1,13 +1,15 @@
 'use strict';
 /**
  * state.js - what the user set: the colours of both zones, brightness, the zone the wheel edits, the
- * running effect and every effect's settings, the favourites. Saved as JSON 500 ms after the last change
+ * running effect and every effect's settings, the favourite groups. Saved as JSON 500 ms after the last change
  * (temp file + rename: a power cut leaves the old file whole). Effect settings whose key starts with
  * "fav" hold a favourite's index.
  */
 const fs = require('fs');
 
 const MAX_FAVS = 8;
+const MAX_GROUPS = 6;
+const MAX_NAME = 18;
 const DEFAULTS = { v: 1, upper: { h: 0, s: 1 }, lower: { h: 220, s: 1 }, brightness: 0.8, zone: 'upper', effect: null, params: {}, favs: [] };
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -16,8 +18,25 @@ const isNum = (x) => typeof x === 'number' && isFinite(x);
 const colorOk = (c) => !!c && isNum(c.h) && isNum(c.s);
 const normColor = (c, dflt) => (colorOk(c) ? { h: ((c.h % 360) + 360) % 360, s: clamp(c.s, 0, 1) } : copy(dflt));
 
+function normFavs(list) {
+    return Array.isArray(list) ? list.filter((f) => f && colorOk(f.upper) && colorOk(f.lower)).slice(0, MAX_FAVS)
+        .map((f) => ({ upper: normColor(f.upper), lower: normColor(f.lower) })) : [];
+}
+function cleanName(name) {
+    const s = String(name || '').trim().replace(/\s+/g, ' ').slice(0, MAX_NAME);
+    return s;
+}
+function normGroup(g) {
+    if (!g || typeof g !== 'object') return null;
+    const name = cleanName(g.name) || 'Favoriten';
+    return { name, favs: normFavs(g.favs) };
+}
 function sanitize(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
+    let groups = Array.isArray(r.groups) ? r.groups.map(normGroup).filter(Boolean).slice(0, MAX_GROUPS) : [];
+    if (!groups.length) groups = [{ name: 'Favoriten', favs: normFavs(r.favs) }];
+    let group = isNum(r.group) ? Math.round(r.group) : 0;
+    if (group < 0 || group >= groups.length) group = 0;
     return {
         v: 1,
         upper: normColor(r.upper, DEFAULTS.upper),
@@ -26,8 +45,9 @@ function sanitize(raw) {
         zone: r.zone === 'lower' ? 'lower' : 'upper',
         effect: typeof r.effect === 'string' ? r.effect : null,
         params: r.params && typeof r.params === 'object' ? copy(r.params) : {},
-        favs: Array.isArray(r.favs) ? r.favs.filter((f) => f && colorOk(f.upper) && colorOk(f.lower)).slice(0, MAX_FAVS)
-            .map((f) => ({ upper: normColor(f.upper), lower: normColor(f.lower) })) : [],
+        group,
+        groups,
+        favs: groups[group].favs,
     };
 }
 
@@ -56,6 +76,7 @@ function createState(file, opts) {
     const other = (z) => (z === 'upper' ? 'lower' : 'upper');
     return {
         MAX_FAVS,
+        MAX_GROUPS,
         get: () => copy(s),
         onChange(fn) { listeners.push(fn); },
         flush() { if (timer !== null) { timers.clearTimeout(timer); save(); } },
@@ -72,6 +93,44 @@ function createState(file, opts) {
             s.favs.push({ upper: copy(s.upper), lower: copy(s.lower) });
             changed();
             return s.favs.length - 1;
+        },
+        cycleGroup(dir) {
+            if (s.groups.length < 2) return;
+            const n = s.groups.length;
+            s.group = ((s.group + (dir || 1)) % n + n) % n;
+            s.favs = s.groups[s.group].favs;
+            changed();
+        },
+        setGroup(i) {
+            if (!(i >= 0 && i < s.groups.length) || i === s.group) return;
+            s.group = i;
+            s.favs = s.groups[i].favs;
+            changed();
+        },
+        addGroup(name) {
+            const clean = cleanName(name);
+            if (!clean || s.groups.length >= MAX_GROUPS) return -1;
+            const favs = [];
+            s.groups.push({ name: clean, favs });
+            s.group = s.groups.length - 1;
+            s.favs = favs;
+            changed();
+            return s.group;
+        },
+        renameGroup(name) {
+            const clean = cleanName(name);
+            if (!clean) return false;
+            s.groups[s.group].name = clean;
+            changed();
+            return true;
+        },
+        deleteGroup(i) {
+            if (s.groups.length < 2 || !(i >= 0 && i < s.groups.length)) return;
+            s.groups.splice(i, 1);
+            if (s.group > i) s.group -= 1;
+            if (s.group >= s.groups.length) s.group = s.groups.length - 1;
+            s.favs = s.groups[s.group].favs;
+            changed();
         },
         removeFav(i) {
             if (!(i >= 0 && i < s.favs.length)) return;
@@ -90,4 +149,4 @@ function readState(file) {
     try { return sanitize(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch (e) { return null; }
 }
 
-module.exports = { createState, readState, MAX_FAVS };
+module.exports = { createState, readState, MAX_FAVS, MAX_GROUPS, MAX_NAME };

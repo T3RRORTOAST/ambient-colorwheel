@@ -27,6 +27,13 @@ function toPoint(col, r) {
     return [Math.sin(a) * col.s * r, -Math.cos(a) * col.s * r];
 }
 const mixRgb = (a, b, f) => a.map((c, i) => Math.round(c + (b[i] - c) * clamp(f, 0, 1)));
+
+/** Walk a toward b along the short arc of the wheel. Opposite hues pass the colours between them. */
+function lerpColor(a, b, f) {
+    f = clamp(f, 0, 1);
+    const d = ((b.h - a.h + 540) % 360) - 180;
+    return { h: ((a.h + d * f) % 360 + 360) % 360, s: a.s + (b.s - a.s) * f };
+}
 const scale = (rgb, k) => rgb.map((c) => Math.round(c * clamp(k, 0, 1)));
 
 /** The frame as a backend gets it: channels at most 0xFE (the BDC's colour data), brightness folded in unless caps.brightness. */
@@ -36,4 +43,4 @@ function toWire(frame, caps) {
     return { upper: out(frame.upper), lower: out(frame.lower), brightness: fold ? 1 : frame.brightness };
 }
 
-module.exports = { clamp, hsvToRgb, toRgb, fromPoint, toPoint, mixRgb, scale, toWire };
+module.exports = { clamp, hsvToRgb, toRgb, fromPoint, toPoint, mixRgb, lerpColor, scale, toWire };

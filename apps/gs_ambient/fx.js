@@ -5,14 +5,18 @@
  */
 const C = require('./color');
 
-const EFFECTS = [require('./fx_cycle'), require('./fx_fade'), require('./fx_breathe')];
+const EFFECTS = [require('./fx_cycle'), require('./fx_pairs'), require('./fx_fade'), require('./fx_breathe')];
 const byId = {};
 EFFECTS.forEach((e) => { byId[e.id] = e; });
 
 /** The effect's settings: the stored ones over the defaults. */
 function paramsOf(e, stored) {
     const out = {};
-    e.params.forEach((p) => { out[p.key] = stored && stored[p.key] !== undefined ? stored[p.key] : p.default; });
+    e.params.forEach((p) => {
+        let v = stored && stored[p.key] !== undefined ? stored[p.key] : p.default;
+        if (p.type === 'range' && typeof v === 'number') v = Number(C.clamp(v, p.min, p.max).toFixed(decimals(p.step)));
+        out[p.key] = v;
+    });
     return out;
 }
 
@@ -20,7 +24,10 @@ function paramsOf(e, stored) {
 function baseOf(st) {
     return {
         upper: C.toRgb(st.upper), lower: C.toRgb(st.lower), brightness: st.brightness,
-        favs: st.favs.map((f) => ({ upper: C.toRgb(f.upper), lower: C.toRgb(f.lower) })),
+        favs: st.favs.map((f) => ({
+            upper: C.toRgb(f.upper), lower: C.toRgb(f.lower),
+            upperC: { h: f.upper.h, s: f.upper.s }, lowerC: { h: f.lower.h, s: f.lower.s },
+        })),
     };
 }
 

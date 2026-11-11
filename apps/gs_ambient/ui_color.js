@@ -25,6 +25,18 @@ function wheel() {
     });
 }
 
+/** The zone marker under the finger, if it lands on one. A tap there picks that zone. */
+function markerNear(st, x, y) {
+    let hit = null, best = 36 * 36;
+    ['upper', 'lower'].forEach((z) => {
+        const p = C.toPoint(st[z], WR);
+        const dx = x - (WX + p[0]), dy = y - (WY + p[1]);
+        const d = dx * dx + dy * dy;
+        if (d <= best) { best = d; hit = z; }
+    });
+    return hit;
+}
+
 function draw(cv, t, m, act) {
     const st = m.st;
     cv.blit(wheel(), WX - WR - 2, WY - WR - 2);
@@ -34,7 +46,14 @@ function draw(cv, t, m, act) {
         cv.circle(WX + p[0], WY + p[1], on ? 16 : 8, C.toRgb(st[z]));
     });
     cv.target(WX - WR, WY - WR, WR * 2, WR * 2, () => act.toggleZone(), 'wheel', WR, {
-        drag: (phase, x, y) => act.wheel(C.fromPoint(x - WX, y - WY, WR)),
+        drag: (phase, x, y) => {
+            if (phase === 1) {
+                const hit = markerNear(act.get(), x, y);
+                if (hit) { act.zone(hit); return; }
+            }
+            if (phase === 3) return;
+            act.wheel(C.fromPoint(x - WX, y - WY, WR));
+        },
         turn: (d) => act.turnHue(d),
     });
 
