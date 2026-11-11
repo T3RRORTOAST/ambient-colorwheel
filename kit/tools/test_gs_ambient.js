@@ -254,6 +254,7 @@ test('bdc: modules, zones and the write that holds a colour', () => {
     assert.deepStrictEqual(p.frameWrite({ bus: 'lin1', nad: 1 }, [255, -4, 10], 150), [0xDA, 0x5E, 1, 1, 100, 254, 0, 10, 254]);
     assert.deepStrictEqual(p.frameRelease(mods[0]), [0xE3, 0xD1, 1, 0, 0, 0, 0, 0, 0]);
     assert.deepStrictEqual(p.frameOff(mods[0]), [0xE3, 0xD1, 1, 1, 0, 0, 0, 0, 254]);
+    assert.strictEqual(p.frameWrite({ bus: 'lin2', nad: 1 }, [1, 2, 3], 10, 30)[8], 30);
 });
 
 /* ---------- state.js ---------- */

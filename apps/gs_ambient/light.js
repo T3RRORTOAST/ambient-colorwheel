@@ -66,6 +66,14 @@ function createSender(backend, opts) {
             if (timer !== null) { clock.clearTimeout(timer); timer = null; }
             return Promise.resolve().then(() => backend.release()).catch((e) => log.warn('light release: ' + e));
         },
+        hold(seconds) {
+            stopped = true;
+            pending = null;
+            if (timer !== null) { clock.clearTimeout(timer); timer = null; }
+            const frame = sent || inflight;
+            if (!frame || typeof backend.hold !== 'function') return Promise.resolve();
+            return Promise.resolve().then(() => backend.hold(C.toWire(frame, backend.capabilities), seconds)).catch((e) => log.warn('light hold: ' + e));
+        },
         extinguish() {
             stopped = true;
             if (timer !== null) { clock.clearTimeout(timer); timer = null; }

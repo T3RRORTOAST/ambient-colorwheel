@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const REV = 3;
+const REV = 4;
 
 const IN_CAR = [5, 7, 8, 10, 12];
 const KNOWN = [1, 2, 3, 5, 7, 8, 10, 12];

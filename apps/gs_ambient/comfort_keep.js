@@ -121,27 +121,31 @@ function watchCar() {
     }, log).then(function (sub) { if (sub.error) { car.ambientError = sub.error; log.info('Menüfarbe nicht da: ' + sub.error); snap(); } });
 }
 
+function armLeave(why, at) {
+    if (leftSince) return;
+    leftSince = at;
+    log.info(why + ', Nachlauf ' + Math.round(comfort.nachlaufMs(prefs().nachlauf) / 1000) + 's');
+}
+
 function tick() {
     if (stopping) return;
     if (vehicleSub && vehicleSub.available) { vehicleSeen = true; downSince = 0; }
-    else if (vehicleSeen) {
-        if (!downSince) downSince = Date.now();
-        if (Date.now() - downSince > 5000) { log.info('Fahrzeugzustand weg, Farbe zurück'); shutdown(); return; }
-    }
+    else if (vehicleSeen && !downSince) downSince = Date.now();
     const heard = comfort.readJson(p.cond);
     if (heard && typeof heard.code === 'number') car.cond = heard.code;
     const wait = comfort.nachlaufMs(prefs().nachlauf);
-    if (comfort.leftCar(car.cond)) {
-        if (!leftSince) { leftSince = Date.now(); log.info('Auto zu (' + car.cond + '), Nachlauf ' + Math.round(wait / 1000) + 's'); }
-        if (Date.now() - leftSince >= wait) { if (wait > 5000) goDark(); else shutdown(); return; }
-    } else leftSince = 0;
+    const serviceDown = !!(vehicleSeen && downSince && Date.now() - downSince > 5000);
+    if (comfort.leftCar(car.cond)) armLeave('Auto zu (' + car.cond + ')', Date.now());
+    else if (serviceDown) armLeave('Fahrzeugzustand weg', downSince);
+    else leftSince = 0;
+    if (leftSince && Date.now() - leftSince >= wait) { if (wait > 5000) goDark(); else shutdown(); return; }
     const was = debugOn;
     debugOn = prefs().debug === true || prefs().debug === 'on';
     if (debugOn && !was) { report.catalog = null; report.bdc = null; surveyAt = 0; }
     if (debugOn && !report.catalog) scanCatalog();
     if (debugOn) maybeSurvey();
     const g = gate();
-    if (!comfort.shouldLight(g) || !getState()) {
+    if (!leftSince && (!comfort.shouldLight(g) || !getState())) {
         const why = comfort.whyNot(g);
         if (sender) stopWriting();
         publish(why ? { state: 'aus', reason: why } : { state: 'bereit', reason: null });
@@ -175,11 +179,32 @@ function finish(dark) {
     setTimeout(function () { process.exit(0); }, 8000);
 }
 
+function linger(ms) {
+    if (stopping) return;
+    stopping = true;
+    const sec = Math.max(1, Math.round(ms / 1000));
+    log.info('Headunit geht, Farbe noch ' + sec + 's');
+    const s = sender;
+    sender = null;
+    if (loop) { loop.stop(); loop = null; }
+    const job = s && typeof s.hold === 'function' ? s.hold(sec) : null;
+    Promise.resolve(job).then(function () { process.exit(0); });
+    setTimeout(function () { process.exit(0); }, 8000);
+}
+
 function shutdown() { finish(false); }
 function goDark() { finish(true); }
 
+function onSignal() {
+    const wait = comfort.nachlaufMs(prefs().nachlauf);
+    if (!(wait > 5000)) { shutdown(); return; }
+    const left = leftSince ? wait - (Date.now() - leftSince) : wait;
+    if (left > 1000) linger(left);
+    else goDark();
+}
+
 watchCar();
 setInterval(tick, 250);
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', onSignal);
+process.on('SIGINT', onSignal);
 log.info('comfort keeper läuft');

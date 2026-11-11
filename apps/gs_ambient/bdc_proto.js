@@ -64,10 +64,11 @@ function busOf(name) {
 }
 
 /** The write for one module. bright is 0..100. Colour bytes never use 0xFF (that means "no change"). */
-function frameWrite(mod, rgb, bright) {
+function frameWrite(mod, rgb, bright, secs) {
     const bus = busOf(mod.bus);
     const b = Math.max(0, Math.min(100, Math.round(bright)));
-    return bus.write.concat([mod.nad, 1, b, cap(rgb[0]), cap(rgb[1]), cap(rgb[2]), HOLD_S]);
+    const hold = secs == null || !isFinite(secs) ? HOLD_S : Math.max(0, Math.min(HOLD_S, Math.round(secs)));
+    return bus.write.concat([mod.nad, 1, b, cap(rgb[0]), cap(rgb[1]), cap(rgb[2]), hold]);
 }
 
 /** Hand the module back to the car's own colour at once. */
@@ -81,9 +82,9 @@ function frameOff(mod) {
 }
 
 /** Which bytes each fitted module should get for this frame. brightness is 0..1. */
-function plan(mods, frame) {
+function plan(mods, frame, secs) {
     const bright = Math.round(Math.max(0, Math.min(1, frame.brightness)) * 100);
-    return mods.map((m) => ({ mod: m, bytes: frameWrite(m, frame[m.zone] || frame.upper, bright) }));
+    return mods.map((m) => ({ mod: m, bytes: frameWrite(m, frame[m.zone] || frame.upper, bright, secs) }));
 }
 
 module.exports = {
