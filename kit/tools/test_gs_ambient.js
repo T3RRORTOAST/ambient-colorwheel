@@ -215,6 +215,9 @@ test('comfort: on while someone is in the car and the factory light is on, off w
     assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: true, boot: true, parked: true }), false);
     assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: true, opened: true, left: true }), false);
     assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: true, boot: true, left: true }), false);
+    assert.strictEqual(c.keeperCurrent(null), false);
+    assert.strictEqual(c.keeperCurrent({ rev: 1 }), false);
+    assert.strictEqual(c.keeperCurrent({ rev: c.REV }), true);
     assert.deepStrictEqual(c.catalogNames('x "de.bmw.infotainment.misc.ComfortFunctionIuK" "de.bmw.infotainment.vehicle.VehicleCondition" "de.bmw.other.Speed"'),
         ['de.bmw.infotainment.misc.ComfortFunctionIuK', 'de.bmw.infotainment.vehicle.VehicleCondition']);
     const dbg = path.join(os.tmpdir(), 'gs-ambient-debug-' + process.pid);

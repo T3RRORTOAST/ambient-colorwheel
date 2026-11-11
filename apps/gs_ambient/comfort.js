@@ -8,7 +8,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
+const REV = 2;
 
 const IN_CAR = [5, 7, 8, 10, 12];
 const KNOWN = [1, 2, 3, 5, 7, 8, 10, 12];
@@ -27,6 +28,7 @@ function paths(dir) {
         debug: path.join(dir, 'gs_ambient_debug.log'),
         probe: path.join(dir, 'gs_ambient_probe.json'),
         cond: path.join(dir, 'gs_ambient_cond.json'),
+        stamp: path.join(dir, 'gs_ambient_comfort.rev'),
     };
 }
 
@@ -160,9 +162,30 @@ function record(files, report) {
     try { writeJson(files.probe, row); } catch (e) { /* same */ }
     return row;
 }
+function keeperCurrent(stamp) {
+    return !!(stamp && stamp.rev === REV);
+}
+
+function retire(pidFile) {
+    let pid;
+    try { pid = Number(fs.readFileSync(pidFile, 'utf8')); } catch (e) { return; }
+    if (!pid) return;
+    try { process.kill(pid, 'SIGTERM'); } catch (e) { return; }
+    const until = Date.now() + 3000;
+    while (Date.now() < until) {
+        try { process.kill(pid, 0); } catch (e) { return; }
+        spawnSync('sleep', ['0.2']);
+    }
+}
+
 function ensure(dataDir, log) {
     const p = paths(dataDir);
-    if (alive(p.pid)) return;
+    if (alive(p.pid)) {
+        if (keeperCurrent(readJson(p.stamp))) return;
+        retire(p.pid);
+        if (alive(p.pid)) { if (log) log.info('comfort keeper wechselt noch'); return; }
+    }
+    writeJson(p.stamp, { rev: REV });
     const child = spawn(process.execPath, [path.join(__dirname, 'comfort_keep.js'), dataDir], { detached: true, stdio: 'ignore' });
     child.unref();
     if (log) log.info('comfort keeper ' + child.pid);
@@ -170,6 +193,7 @@ function ensure(dataDir, log) {
 
 module.exports = {
     IN_CAR: IN_CAR, paths: paths, readJson: readJson, writeJson: writeJson, alive: alive,
+    REV: REV, keeperCurrent: keeperCurrent,
     codeOf: codeOf, inCar: inCar, leftCar: leftCar, ambientAllows: ambientAllows, shouldLight: shouldLight, shouldEnsure: shouldEnsure, whyNot: whyNot,
     createMirror: createMirror, ensure: ensure, catalogNames: catalogNames, record: record,
 };
