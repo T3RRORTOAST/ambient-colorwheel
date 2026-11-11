@@ -29,6 +29,7 @@ const car = { cond: null, ambientOn: null, ambientKnown: false, vehicleRaw: null
 const report = { debug: false, catalog: null, vehicle: null, ambient: null, bdc: null, gate: null, light: null };
 let backend = null, sender = null, loop = null, stopping = false, shown = '';
 let debugOn = false, surveying = false, surveyAt = 0;
+let vehicleSub = null, vehicleSeen = false, downSince = 0;
 
 function getState() { return readState(p.state); }
 
@@ -88,16 +89,28 @@ function maybeSurvey() {
     }).catch(function (e) { surveying = false; log.warn('Probe ' + e.message); });
 }
 
+function applyCond(v) {
+    if (v === undefined || v === null) return;
+    car.vehicleRaw = typeof v === 'string' ? v : JSON.stringify(v);
+    car.vehicleError = null;
+    const n = comfort.codeOf(v);
+    if (n !== null) car.cond = n;
+    log.info('Fahrzeug ' + car.vehicleRaw + (n === null ? ' (ungelesen)' : ' -> ' + n));
+    snap();
+}
+
 function watchCar() {
     signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
-        VehicleCondition: function (v) {
-            car.cond = v;
-            car.vehicleRaw = typeof v === 'string' ? v : JSON.stringify(v);
-            car.vehicleError = null;
-            log.info('Fahrzeug ' + car.vehicleRaw);
-            snap();
-        },
-    }, log).then(function (sub) { if (sub.error) { car.vehicleError = sub.error; log.info('Fahrzeugzustand nicht da: ' + sub.error); snap(); } });
+        VehicleCondition: applyCond,
+    }, log).then(function (sub) {
+        vehicleSub = sub;
+        if (sub.error) { car.vehicleError = sub.error; log.info('Fahrzeugzustand nicht da: ' + sub.error); snap(); return; }
+        log.info('Fahrzeugzustand abonniert' + (sub.available ? ', Dienst da' : ', warte auf den Dienst'));
+        if (!sub.proxy) return;
+        signals.readField(sub.proxy, 'VehicleCondition', 3000).then(applyCond).catch(function (e) {
+            log.info('Fahrzeugzustand ohne Abruf: ' + (e && e.message ? e.message : e));
+        });
+    });
     signals.watch('de.bmw.infotainment.misc.ComfortFunctionIuK', '1', {
         statusAmbientLightInteriorColour: function (v) {
             car.ambientRaw = typeof v === 'string' ? v : JSON.stringify(v);
@@ -110,6 +123,12 @@ function watchCar() {
 
 function tick() {
     if (stopping) return;
+    if (vehicleSub && vehicleSub.available) { vehicleSeen = true; downSince = 0; }
+    else if (vehicleSeen) {
+        if (!downSince) downSince = Date.now();
+        if (Date.now() - downSince > 5000) { log.info('Fahrzeugzustand weg, Farbe zurück'); shutdown(); return; }
+    }
+    if (comfort.leftCar(car.cond)) { log.info('Auto zu (' + comfort.codeOf(car.cond) + '), Farbe zurück'); shutdown(); return; }
     const was = debugOn;
     debugOn = prefs().debug === true || prefs().debug === 'on';
     if (debugOn && !was) { report.catalog = null; report.bdc = null; surveyAt = 0; }
@@ -128,7 +147,9 @@ function tick() {
         sender = light.createSender(bdc(), { log: log });
         loop = fx.createLoop({ getState: getState, readInputs: function () { return {}; }, sink: function (f) { if (sender) sender.push(f); } });
         loop.start();
-        log.info('Licht an');
+        const resumed = getState();
+        const grp = resumed && resumed.groups ? resumed.groups[resumed.group] : null;
+        log.info('Licht an' + (resumed && resumed.effect ? ' ' + resumed.effect + (grp ? ' / ' + grp.name : '') : ''));
     }
     const st = sender.status();
     publish({ state: st.state, reason: st.reason || null });
@@ -141,7 +162,7 @@ function shutdown() {
     stopping = true;
     log.info('Ende, Farbe zurück');
     Promise.resolve(stopWriting()).then(function () { process.exit(0); });
-    setTimeout(function () { process.exit(0); }, 3000);
+    setTimeout(function () { process.exit(0); }, 8000);
 }
 
 watchCar();

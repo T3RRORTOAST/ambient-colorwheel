@@ -3,7 +3,8 @@
  * Ambient - a colour wheel for the ambient lighting: two zones (upper, lower), brightness, three
  * effects (cycle, fade, breathe), favourites. Simulated by default. BDC-Licht is written by the
  * comfort keeper, which keeps renewing after this screen closes and hands the colour back when the
- * car is parked or standby, or the factory ambient light is off.
+ * car is parked or standby. The head unit starts this process on its own. The Autostart setting
+ * decides whether the saved colour is applied then, and again after the car is left and come back to.
  */
 const path = require('path');
 const mgu = require('./kit/mgu');
@@ -28,15 +29,46 @@ mgu.run({
         const backendFor = (name) => (name === 'bdc' ? comfort.createMirror(files.status) : light.createBackend(name, ctx));
         state.flush();
         publish();
-        if (signals.hasNative()) comfort.ensure(ctx.dataDir, log);
+        let parked = false, opened = false;
+        const gate = (why) => ({
+            light: settings.get('light'), autostart: settings.get('autostart') === true,
+            boot: why === 'boot', opened: opened, woke: why === 'woke', parked: parked,
+        });
+        const consider = (why) => {
+            if (!comfort.shouldEnsure(gate(why)) || !signals.hasNative()) return;
+            comfort.ensure(ctx.dataDir, log);
+            log.info('comfort keeper, ' + why);
+        };
+        consider('boot');
+        if (signals.hasNative()) signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
+            VehicleCondition: (v) => {
+                const n = comfort.codeOf(v);
+                if (n === null) return;
+                if (comfort.leftCar(n)) { parked = true; state.flush(); log.info('Autostart wartet, Auto zu (' + n + ')'); return; }
+                if (parked && comfort.inCar(n)) { parked = false; consider('woke'); }
+            },
+        }, log).catch((e) => log.warn('Fahrzeugzustand: ' + (e && e.message ? e.message : e)));
+        setInterval(() => {
+            const screens = (ctx.spec && ctx.spec.screens) || [];
+            let vis = false;
+            for (let i = 0; i < screens.length; i++) if (ctx.ui.isVisible(screens[i].name)) vis = true;
+            if (vis && !opened) { opened = true; parked = false; consider('opened'); }
+            if (!vis) opened = false;
+        }, 1000);
         let sender = light.createSender(backendFor(settings.get('light')), { log });
         settings.onChange((key) => {
-            if (key !== 'light' && key !== 'debug') return;
+            if (key !== 'light' && key !== 'debug' && key !== 'autostart') return;
             publish();
-            if (key !== 'light') { log.info('debug: ' + settings.get('debug')); return; }
+            if (key === 'debug') { log.info('debug: ' + settings.get('debug')); return; }
+            if (key === 'autostart') {
+                log.info('autostart: ' + settings.get('autostart'));
+                if (settings.get('autostart')) { parked = false; consider('boot'); }
+                return;
+            }
             sender.release();
             sender = light.createSender(backendFor(settings.get('light')), { log });
             log.info('light backend: ' + settings.get('light'));
+            if (settings.get('light') === 'bdc') { opened = true; consider('opened'); }
         });
         state.onChange(() => sender.resume());
         const loop = fx.createLoop({ getState: () => state.get(), readInputs: inputs, sink: (frame) => sender.push(frame) });

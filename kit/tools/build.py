@@ -397,6 +397,10 @@ def build(app_id, language='en'):
             'userLoginRequired': False, 'backgroundPriority': 200, 'someipManifest': 'manifest.json',
         },
     }
+    # The store reads this when it lists the app: autostart comes up with the head unit,
+    # is started again if it exits, and is not stopped for sitting in the background.
+    if spec.get('startType') in ('autostart', 'lum', 'manually'):
+        pkg['mguAppStartType'] = spec['startType']
     json.dump(pkg, open(os.path.join(src, 'package.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     json.dump(manifest, open(os.path.join(src, 'manifest.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
     shutil.copy(os.path.join(KIT, 'platform', 'permissions.json'), os.path.join(src, 'permissions.json'))

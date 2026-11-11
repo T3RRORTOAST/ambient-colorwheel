@@ -199,6 +199,20 @@ test('comfort: on while someone is in the car and the factory light is on, off w
     assert.strictEqual(c.whyNot({ backend: 'bdc', cond: 8, ambientOn: false, ambientKnown: true }), 'Ambiente aus');
     assert.strictEqual(c.shouldLight({ backend: 'sim', cond: 8, ambientOn: true, ambientKnown: true }), false);
     assert.strictEqual(c.inCar('WOHNEN'), true);
+    assert.strictEqual(c.leftCar(null), false);
+    assert.strictEqual(c.leftCar(5), false);
+    assert.strictEqual(c.codeOf({ statusConditionVehicle: 'STANDFUNKTIONEN_KUNDE_NICHT_IM_FZG' }), 3);
+    assert.strictEqual(c.leftCar({ VehicleCondition: { statusConditionVehicle: 3 } }), true);
+    assert.strictEqual(c.codeOf([0, 0, 0, 0, 0, 2]), 2);
+    assert.strictEqual(c.leftCar(2), true);
+    const boot = { light: 'bdc', autostart: true, boot: true };
+    assert.strictEqual(c.shouldEnsure(boot), true);
+    assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: false, boot: true }), false);
+    assert.strictEqual(c.shouldEnsure({ light: 'sim', autostart: true, boot: true }), false);
+    assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: false, opened: true }), true);
+    assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: true, woke: true, parked: true }), true);
+    assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: false, woke: true, parked: true }), false);
+    assert.strictEqual(c.shouldEnsure({ light: 'bdc', autostart: true, boot: true, parked: true }), false);
     assert.deepStrictEqual(c.catalogNames('x "de.bmw.infotainment.misc.ComfortFunctionIuK" "de.bmw.infotainment.vehicle.VehicleCondition" "de.bmw.other.Speed"'),
         ['de.bmw.infotainment.misc.ComfortFunctionIuK', 'de.bmw.infotainment.vehicle.VehicleCondition']);
     const dbg = path.join(os.tmpdir(), 'gs-ambient-debug-' + process.pid);
@@ -453,6 +467,22 @@ test('loop: the fixed colours without an effect, the effect\'s frame with one, t
     const n = frames.length;
     await clk.advance(1000);
     assert.strictEqual(frames.length, n);
+});
+test('loop: the saved effect resumes on the group that was open', () => {
+    const state = app('state.js'), fx = app('fx.js');
+    const f = tmpFile();
+    const pair = (uh, lh) => ({ upper: { h: uh, s: 1 }, lower: { h: lh, s: 1 } });
+    fs.writeFileSync(f, JSON.stringify({
+        effect: 'pairs', group: 1, params: { pairs: { speed: 10 } },
+        groups: [
+            { name: 'Favoriten', favs: [pair(0, 0), pair(30, 30)] },
+            { name: 'Nacht', favs: [pair(120, 240), pair(90, 0)] },
+        ],
+    }));
+    const st = state.readState(f);
+    assert.strictEqual(st.groups[st.group].name, 'Nacht');
+    const loop = fx.createLoop({ getState: () => st, readInputs: () => ({}), sink() {}, clock: fakeClock() });
+    assert.deepStrictEqual(loop.tick().upper, GREEN);
 });
 test('loop: an effect without its data pauses on the fixed colours and says why', () => {
     const fx = app('fx.js');

@@ -3,13 +3,19 @@
  * comfort.js - the decision Iterio's comfort service uses for the ambient light, and the files the
  * keeper shares with the screen. The colour is sent only while BDC-Licht is chosen, the car's own
  * ambient light is on, and someone is still in the car. Parked or standby (the car locked and left)
- * hands the modules back. A condition that has not been heard yet does not block the colour.
+ * hands the modules back and the keeper process exits, so it does not keep the head unit awake.
+ * A condition that has not been heard yet does not block the colour.
  */
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
 const IN_CAR = [5, 7, 8, 10, 12];
+const KNOWN = [1, 2, 3, 5, 7, 8, 10, 12];
+const CONDITIONS = {
+    PARKEN_BN_NIO: 1, PARKEN_BN_IO: 2, STANDFUNKTIONEN_KUNDE_NICHT_IM_FZG: 3, WOHNEN: 5,
+    PRUEFEN_ANALYSE_DIAGNOSE: 7, FAHRBEREITSCHAFT_HERSTELLEN: 8, FAHREN: 10, FAHRBEREITSCHAFT_BEENDEN: 12,
+};
 
 function paths(dir) {
     return {
@@ -39,10 +45,13 @@ function alive(pidFile) {
 
 /** A VehicleCondition value -> its number, or null when this process cannot read it. */
 function codeOf(v) {
+    if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) v = Array.prototype.slice.call(v);
     if (typeof v === 'number' && isFinite(v)) return v;
+    if (Array.isArray(v)) return v.length > 5 && KNOWN.indexOf(v[5]) >= 0 ? v[5] : null;
     if (typeof v === 'string') {
         if (String(parseInt(v, 10)) === v) return parseInt(v, 10);
         const s = v.toUpperCase();
+        if (CONDITIONS[s]) return CONDITIONS[s];
         if (s.indexOf('STAND') >= 0 || s.indexOf('PARK') >= 0) return 1;
         if (s.indexOf('WOHN') >= 0 || s.indexOf('RESID') >= 0) return 5;
         if (s.indexOf('PRUEF') >= 0 || s.indexOf('PRÜF') >= 0 || s === 'TEST') return 7;
@@ -51,7 +60,7 @@ function codeOf(v) {
         return null;
     }
     if (v && typeof v === 'object') {
-        const keys = ['conditionVehicle', 'statusConditionVehicle', 'value', 'state'];
+        const keys = ['conditionVehicle', 'statusConditionVehicle', 'value', 'state', 'VehicleCondition'];
         for (let i = 0; i < keys.length; i++) {
             if (v[keys[i]] !== undefined && v[keys[i]] !== v) {
                 const n = codeOf(v[keys[i]]);
@@ -60,6 +69,12 @@ function codeOf(v) {
         }
     }
     return null;
+}
+
+/** true once the car has said it is parked or locked with nobody in it. Unknown is not that. */
+function leftCar(cond) {
+    const n = codeOf(cond);
+    return n !== null && IN_CAR.indexOf(n) < 0;
 }
 
 /** true: someone is in the car, or the car has not said yet. false: parked or standby. */
@@ -78,6 +93,19 @@ function ambientAllows(on, known) {
 
 function shouldLight(g) {
     return !!(g && g.backend === 'bdc' && inCar(g.cond) && ambientAllows(g.ambientOn, g.ambientKnown));
+}
+
+/**
+ * Whether the screen process should start the keeper.
+ * boot: the head unit just started this process. opened: a screen is on show.
+ * woke: the car was left and someone is in it again. parked: that leave was seen.
+ */
+function shouldEnsure(o) {
+    if (!o || o.light !== 'bdc') return false;
+    if (o.opened) return true;
+    if (!o.autostart) return false;
+    if (o.woke) return true;
+    return !!(o.boot && !o.parked);
 }
 
 function whyNot(g) {
@@ -140,6 +168,6 @@ function ensure(dataDir, log) {
 
 module.exports = {
     IN_CAR: IN_CAR, paths: paths, readJson: readJson, writeJson: writeJson, alive: alive,
-    codeOf: codeOf, inCar: inCar, ambientAllows: ambientAllows, shouldLight: shouldLight, whyNot: whyNot,
+    codeOf: codeOf, inCar: inCar, leftCar: leftCar, ambientAllows: ambientAllows, shouldLight: shouldLight, shouldEnsure: shouldEnsure, whyNot: whyNot,
     createMirror: createMirror, ensure: ensure, catalogNames: catalogNames, record: record,
 };

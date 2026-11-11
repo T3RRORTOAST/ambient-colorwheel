@@ -110,10 +110,15 @@ function on(p, name, fn, log) {
     return nativeTick(() => p.subscribe({ name, onReceive: (v) => { try { fn(v); } catch (e) { if (log) log.warn(name + ': ' + e); } } }));
 }
 
+/** Read one field through the same queue as watch(), so the native binding is not called beside another call. */
+function readField(p, field, timeoutMs) {
+    return nativeTick(() => p.getValue(field, timeoutMs || 3000));
+}
+
 /** Availability of a proxy's provider; fn(bool) on every change. */
 function onAvailable(p, fn) {
     return nativeTick(() => { try { return p.subscribeToAvailability((a) => fn(!!a)); } catch (e) { return null; } })
         .then(() => { if (p.isAvailable && p.isAvailable()) fn(true); });
 }
 
-module.exports = { watch, proxy, call, set, on, onAvailable, loadConfig, hasNative: () => !!someip };
+module.exports = { watch, proxy, call, set, readField, on, onAvailable, loadConfig, hasNative: () => !!someip };

@@ -2,7 +2,8 @@
   "id": "gs_ambient",
   "title": "Ambient",
   "description": "Farbrad für die Ambientebeleuchtung: zwei Zonen (oben und unten), Helligkeit, Farbverlauf, Favoritenlauf, Überblenden, Atmen und Favoritengruppen. Standard ist die Simulation. BDC-Licht schreibt über den bestätigten Kurzzeit-Weg und ein Comfort-Dienst hält die Farbe, nachdem die Oberfläche zu ist, bis das Auto aus ist",
-  "version": "0.1.3",
+  "version": "0.1.4",
+  "startType": "autostart",
   "vendor": "custom",
   "loggingId": "OAB0",
   "iconGlyph": "Am",
@@ -41,6 +42,7 @@
   "settings": [
     {"key": "light", "label": "Lichtsteuerung", "type": "choice", "default": "sim",
      "options": [["sim", "Simuliert (sicher)"], ["profile", "Profil umschalten · gesperrt"], ["bdc", "BDC-Licht (schreibt ans Auto)"]]},
+    {"key": "autostart", "label": "Autostart", "type": "bool", "default": true},
     {"key": "layout", "label": "Bildschirm-Layout", "type": "choice", "default": "full",
      "options": [["full", "Vollbild"], ["standard", "Standard"]]},
     {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
