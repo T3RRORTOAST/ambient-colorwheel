@@ -29,7 +29,7 @@ const car = { cond: null, ambientOn: null, ambientKnown: false, vehicleRaw: null
 const report = { debug: false, catalog: null, vehicle: null, ambient: null, bdc: null, gate: null, light: null };
 let backend = null, sender = null, loop = null, stopping = false, shown = '';
 let debugOn = false, surveying = false, surveyAt = 0;
-let vehicleSub = null, vehicleSeen = false, downSince = 0;
+let vehicleSub = null, vehicleSeen = false, downSince = 0, leftSince = 0;
 
 function getState() { return readState(p.state); }
 
@@ -128,7 +128,12 @@ function tick() {
         if (!downSince) downSince = Date.now();
         if (Date.now() - downSince > 5000) { log.info('Fahrzeugzustand weg, Farbe zurück'); shutdown(); return; }
     }
-    if (comfort.leftCar(car.cond)) { log.info('Auto zu (' + comfort.codeOf(car.cond) + '), Farbe zurück'); shutdown(); return; }
+    const heard = comfort.readJson(p.cond);
+    if (heard && typeof heard.code === 'number') car.cond = heard.code;
+    if (comfort.leftCar(car.cond)) {
+        if (!leftSince) { leftSince = Date.now(); log.info('Auto zu (' + car.cond + '), warte'); }
+        if (Date.now() - leftSince > 5000) { log.info('Auto zu (' + car.cond + '), Farbe zurück'); shutdown(); return; }
+    } else leftSince = 0;
     const was = debugOn;
     debugOn = prefs().debug === true || prefs().debug === 'on';
     if (debugOn && !was) { report.catalog = null; report.bdc = null; surveyAt = 0; }

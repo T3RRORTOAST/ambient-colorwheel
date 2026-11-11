@@ -29,10 +29,12 @@ mgu.run({
         const backendFor = (name) => (name === 'bdc' ? comfort.createMirror(files.status) : light.createBackend(name, ctx));
         state.flush();
         publish();
-        let parked = false, opened = false;
+        const heard = comfort.readJson(files.cond);
+        let condCode = heard && typeof heard.code === 'number' ? heard.code : null;
+        let parked = comfort.leftCar(condCode), opened = false;
         const gate = (why) => ({
             light: settings.get('light'), autostart: settings.get('autostart') === true,
-            boot: why === 'boot', opened: opened, woke: why === 'woke', parked: parked,
+            boot: why === 'boot', opened: opened, woke: why === 'woke', parked: parked, left: parked,
         });
         const consider = (why) => {
             if (!comfort.shouldEnsure(gate(why)) || !signals.hasNative()) return;
@@ -40,13 +42,18 @@ mgu.run({
             log.info('comfort keeper, ' + why);
         };
         consider('boot');
+        const noteCond = (v) => {
+            const n = comfort.codeOf(v);
+            if (n === null || n === condCode) return;
+            const wasLeft = comfort.leftCar(condCode);
+            condCode = n;
+            comfort.writeJson(files.cond, { code: n, at: Date.now() });
+            log.info('Fahrzeug ' + n);
+            if (comfort.leftCar(n)) { parked = true; state.flush(); return; }
+            if (wasLeft && comfort.inCar(n)) { parked = false; consider('woke'); }
+        };
         if (signals.hasNative()) signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
-            VehicleCondition: (v) => {
-                const n = comfort.codeOf(v);
-                if (n === null) return;
-                if (comfort.leftCar(n)) { parked = true; state.flush(); log.info('Autostart wartet, Auto zu (' + n + ')'); return; }
-                if (parked && comfort.inCar(n)) { parked = false; consider('woke'); }
-            },
+            VehicleCondition: noteCond,
         }, log).catch((e) => log.warn('Fahrzeugzustand: ' + (e && e.message ? e.message : e)));
         setInterval(() => {
             const screens = (ctx.spec && ctx.spec.screens) || [];

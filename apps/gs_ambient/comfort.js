@@ -26,6 +26,7 @@ function paths(dir) {
         log: path.join(dir, 'gs_ambient_comfort.log'),
         debug: path.join(dir, 'gs_ambient_debug.log'),
         probe: path.join(dir, 'gs_ambient_probe.json'),
+        cond: path.join(dir, 'gs_ambient_cond.json'),
     };
 }
 
@@ -102,6 +103,7 @@ function shouldLight(g) {
  */
 function shouldEnsure(o) {
     if (!o || o.light !== 'bdc') return false;
+    if (o.left) return false;
     if (o.opened) return true;
     if (!o.autostart) return false;
     if (o.woke) return true;
