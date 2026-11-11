@@ -218,6 +218,10 @@ test('comfort: on while someone is in the car and the factory light is on, off w
     assert.strictEqual(c.keeperCurrent(null), false);
     assert.strictEqual(c.keeperCurrent({ rev: 1 }), false);
     assert.strictEqual(c.keeperCurrent({ rev: c.REV }), true);
+    assert.strictEqual(c.nachlaufMs(0), 5000);
+    assert.strictEqual(c.nachlaufMs('30'), 30000);
+    assert.strictEqual(c.nachlaufMs(3), 10000);
+    assert.strictEqual(c.nachlaufMs(180), 120000);
     assert.deepStrictEqual(c.catalogNames('x "de.bmw.infotainment.misc.ComfortFunctionIuK" "de.bmw.infotainment.vehicle.VehicleCondition" "de.bmw.other.Speed"'),
         ['de.bmw.infotainment.misc.ComfortFunctionIuK', 'de.bmw.infotainment.vehicle.VehicleCondition']);
     const dbg = path.join(os.tmpdir(), 'gs-ambient-debug-' + process.pid);
@@ -249,6 +253,7 @@ test('bdc: modules, zones and the write that holds a colour', () => {
     assert.deepStrictEqual(planned[1].bytes, [0xE3, 0xD1, 2, 1, 50, 254, 0, 0, 254]);
     assert.deepStrictEqual(p.frameWrite({ bus: 'lin1', nad: 1 }, [255, -4, 10], 150), [0xDA, 0x5E, 1, 1, 100, 254, 0, 10, 254]);
     assert.deepStrictEqual(p.frameRelease(mods[0]), [0xE3, 0xD1, 1, 0, 0, 0, 0, 0, 0]);
+    assert.deepStrictEqual(p.frameOff(mods[0]), [0xE3, 0xD1, 1, 1, 0, 0, 0, 0, 254]);
 });
 
 /* ---------- state.js ---------- */

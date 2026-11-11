@@ -75,6 +75,11 @@ function frameRelease(mod) {
     return busOf(mod.bus).write.concat([mod.nad, 0, 0, 0, 0, 0, 0]);
 }
 
+/** Keep the module in our hands, but dark, for the longest hold the controller accepts. */
+function frameOff(mod) {
+    return busOf(mod.bus).write.concat([mod.nad, 1, 0, 0, 0, 0, HOLD_S]);
+}
+
 /** Which bytes each fitted module should get for this frame. brightness is 0..1. */
 function plan(mods, frame) {
     const bright = Math.round(Math.max(0, Math.min(1, frame.brightness)) * 100);
@@ -83,5 +88,5 @@ function plan(mods, frame) {
 
 module.exports = {
     BDC: BDC, SGBD_G05: SGBD_G05, HOLD_S: HOLD_S, RENEW_MS: RENEW_MS, BUSES: BUSES,
-    zoneOf: zoneOf, nameOf: nameOf, sgbdOf: sgbdOf, parseModules: parseModules, frameWrite: frameWrite, frameRelease: frameRelease, plan: plan,
+    zoneOf: zoneOf, nameOf: nameOf, sgbdOf: sgbdOf, parseModules: parseModules, frameWrite: frameWrite, frameRelease: frameRelease, frameOff: frameOff, plan: plan,
 };

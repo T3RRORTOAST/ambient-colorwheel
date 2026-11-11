@@ -130,9 +130,10 @@ function tick() {
     }
     const heard = comfort.readJson(p.cond);
     if (heard && typeof heard.code === 'number') car.cond = heard.code;
+    const wait = comfort.nachlaufMs(prefs().nachlauf);
     if (comfort.leftCar(car.cond)) {
-        if (!leftSince) { leftSince = Date.now(); log.info('Auto zu (' + car.cond + '), warte'); }
-        if (Date.now() - leftSince > 5000) { log.info('Auto zu (' + car.cond + '), Farbe zurück'); shutdown(); return; }
+        if (!leftSince) { leftSince = Date.now(); log.info('Auto zu (' + car.cond + '), Nachlauf ' + Math.round(wait / 1000) + 's'); }
+        if (Date.now() - leftSince >= wait) { if (wait > 5000) goDark(); else shutdown(); return; }
     } else leftSince = 0;
     const was = debugOn;
     debugOn = prefs().debug === true || prefs().debug === 'on';
@@ -162,13 +163,20 @@ function tick() {
     if (debugOn) snap();
 }
 
-function shutdown() {
+function finish(dark) {
     if (stopping) return;
     stopping = true;
-    log.info('Ende, Farbe zurück');
-    Promise.resolve(stopWriting()).then(function () { process.exit(0); });
+    log.info(dark ? 'Nachlauf zu, Licht aus' : 'Ende, Farbe zurück');
+    const s = sender;
+    sender = null;
+    if (loop) { loop.stop(); loop = null; }
+    const job = s && dark && typeof s.extinguish === 'function' ? s.extinguish() : (s ? s.release() : null);
+    Promise.resolve(job).then(function () { process.exit(0); });
     setTimeout(function () { process.exit(0); }, 8000);
 }
+
+function shutdown() { finish(false); }
+function goDark() { finish(true); }
 
 watchCar();
 setInterval(tick, 250);

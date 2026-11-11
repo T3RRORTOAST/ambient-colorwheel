@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const REV = 2;
+const REV = 3;
 
 const IN_CAR = [5, 7, 8, 10, 12];
 const KNOWN = [1, 2, 3, 5, 7, 8, 10, 12];
@@ -162,6 +162,13 @@ function record(files, report) {
     try { writeJson(files.probe, row); } catch (e) { /* same */ }
     return row;
 }
+/** 0 keeps today's hand-back after a short settle. Any chosen offset is 10–120 s, then the modules go dark. */
+function nachlaufMs(v) {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return 5000;
+    return Math.max(10, Math.min(120, Math.round(n))) * 1000;
+}
+
 function keeperCurrent(stamp) {
     return !!(stamp && stamp.rev === REV);
 }
@@ -193,7 +200,7 @@ function ensure(dataDir, log) {
 
 module.exports = {
     IN_CAR: IN_CAR, paths: paths, readJson: readJson, writeJson: writeJson, alive: alive,
-    REV: REV, keeperCurrent: keeperCurrent,
+    REV: REV, keeperCurrent: keeperCurrent, nachlaufMs: nachlaufMs,
     codeOf: codeOf, inCar: inCar, leftCar: leftCar, ambientAllows: ambientAllows, shouldLight: shouldLight, shouldEnsure: shouldEnsure, whyNot: whyNot,
     createMirror: createMirror, ensure: ensure, catalogNames: catalogNames, record: record,
 };

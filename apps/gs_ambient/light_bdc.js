@@ -161,6 +161,20 @@ function create(ctx) {
                 return next(0);
             });
         },
+        extinguish: function () {
+            stopped = true;
+            desired = null;
+            if (timer) { clearInterval(timer); timer = null; }
+            Object.keys(sent).forEach(function (k) { delete sent[k]; });
+            return enqueue(function () {
+                const d = diag, list = mods || [];
+                if (!d || !list.length) return null;
+                const next = function (i) {
+                    return i >= list.length ? null : read(d, 0x2E, P.frameOff(list[i])).catch(function () { return null; }).then(function () { return next(i + 1); });
+                };
+                return next(0);
+            });
+        },
     };
 }
 

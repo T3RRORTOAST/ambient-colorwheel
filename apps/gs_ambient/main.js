@@ -25,7 +25,9 @@ mgu.run({
         const state = createState(path.join(ctx.dataDir, 'gs_ambient_state.json'), { log });
         const t0 = Date.now();
         const inputs = () => readInputs(car.data(), (Date.now() - t0) / 1000);
-        const publish = () => comfort.writeJson(files.light, { light: settings.get('light'), debug: settings.get('debug') });
+        const publish = () => comfort.writeJson(files.light, {
+            light: settings.get('light'), debug: settings.get('debug'), nachlauf: settings.get('nachlauf'),
+        });
         const backendFor = (name) => (name === 'bdc' ? comfort.createMirror(files.status) : light.createBackend(name, ctx));
         state.flush();
         publish();
@@ -64,8 +66,9 @@ mgu.run({
         }, 1000);
         let sender = light.createSender(backendFor(settings.get('light')), { log });
         settings.onChange((key) => {
-            if (key !== 'light' && key !== 'debug' && key !== 'autostart') return;
+            if (key !== 'light' && key !== 'debug' && key !== 'autostart' && key !== 'nachlauf') return;
             publish();
+            if (key === 'nachlauf') { log.info('nachlauf: ' + settings.get('nachlauf')); return; }
             if (key === 'debug') { log.info('debug: ' + settings.get('debug')); return; }
             if (key === 'autostart') {
                 log.info('autostart: ' + settings.get('autostart'));

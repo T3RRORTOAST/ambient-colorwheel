@@ -66,6 +66,12 @@ function createSender(backend, opts) {
             if (timer !== null) { clock.clearTimeout(timer); timer = null; }
             return Promise.resolve().then(() => backend.release()).catch((e) => log.warn('light release: ' + e));
         },
+        extinguish() {
+            stopped = true;
+            if (timer !== null) { clock.clearTimeout(timer); timer = null; }
+            const off = typeof backend.extinguish === 'function' ? backend.extinguish : backend.release;
+            return Promise.resolve().then(() => off.call(backend)).catch((e) => log.warn('light off: ' + e));
+        },
     };
 }
 
