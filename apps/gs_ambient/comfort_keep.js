@@ -29,7 +29,7 @@ const car = { cond: null, ambientOn: null, ambientKnown: false, vehicleRaw: null
 const report = { debug: false, catalog: null, vehicle: null, ambient: null, bdc: null, gate: null, light: null };
 let backend = null, sender = null, loop = null, stopping = false, shown = '';
 let debugOn = false, surveying = false, surveyAt = 0;
-let vehicleSub = null, vehicleSeen = false, downSince = 0, leftSince = 0;
+let vehicleSub = null, vehicleSeen = false, downSince = 0, leftSince = 0, retryAt = 0;
 
 function getState() { return readState(p.state); }
 
@@ -135,7 +135,10 @@ function tick() {
     if (heard && typeof heard.code === 'number') car.cond = heard.code;
     const wait = comfort.nachlaufMs(prefs().nachlauf);
     const serviceDown = !!(vehicleSeen && downSince && Date.now() - downSince > 5000);
-    if (comfort.leftCar(car.cond)) armLeave('Auto zu (' + car.cond + ')', Date.now());
+    const doorOn = !!(comfort.readJson(p.doors) || {}).open;
+    if (doorOn) {
+        if (leftSince) { leftSince = 0; log.info('Tür auf, Farbe wieder'); }
+    } else if (comfort.leftCar(car.cond)) armLeave('Auto zu (' + car.cond + ')', Date.now());
     else if (serviceDown) armLeave('Fahrzeugzustand weg', downSince);
     else leftSince = 0;
     if (leftSince && Date.now() - leftSince >= wait) { if (wait > 5000) goDark(); else shutdown(); return; }
@@ -145,7 +148,7 @@ function tick() {
     if (debugOn && !report.catalog) scanCatalog();
     if (debugOn) maybeSurvey();
     const g = gate();
-    if (!leftSince && (!comfort.shouldLight(g) || !getState())) {
+    if (!leftSince && !doorOn && (!comfort.shouldLight(g) || !getState())) {
         const why = comfort.whyNot(g);
         if (sender) stopWriting();
         publish(why ? { state: 'aus', reason: why } : { state: 'bereit', reason: null });
@@ -162,6 +165,12 @@ function tick() {
         log.info('Licht an' + (resumed && resumed.effect ? ' ' + resumed.effect + (grp ? ' / ' + grp.name : '') : ''));
     }
     const st = sender.status();
+    if (st.state === 'fehler' && Date.now() >= retryAt) {
+        retryAt = Date.now() + 5000;
+        sender.resume();
+        log.info('Licht erneut');
+    }
+    if (st.state !== 'fehler') retryAt = 0;
     publish({ state: st.state, reason: st.reason || null });
     report.light = { state: st.state, reason: st.reason || null };
     if (debugOn) snap();

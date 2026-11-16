@@ -222,6 +222,10 @@ test('comfort: on while someone is in the car and the factory light is on, off w
     assert.strictEqual(c.nachlaufMs('30'), 30000);
     assert.strictEqual(c.nachlaufMs(3), 10000);
     assert.strictEqual(c.nachlaufMs(180), 120000);
+    assert.strictEqual(c.doorOpen(null), false);
+    assert.strictEqual(c.doorOpen({ statusDoorSwitchDRD: 1 }), true);
+    assert.strictEqual(c.doorOpen({ statusDoorSwitchPSD: 'TUER_OFFEN' }), true);
+    assert.strictEqual(c.doorOpen({ statusDoorSwitchDRD: 0, statusDoorSwitchPSD: 'TUER_GESCHLOSSEN' }), false);
     assert.deepStrictEqual(c.catalogNames('x "de.bmw.infotainment.misc.ComfortFunctionIuK" "de.bmw.infotainment.vehicle.VehicleCondition" "de.bmw.other.Speed"'),
         ['de.bmw.infotainment.misc.ComfortFunctionIuK', 'de.bmw.infotainment.vehicle.VehicleCondition']);
     const dbg = path.join(os.tmpdir(), 'gs-ambient-debug-' + process.pid);

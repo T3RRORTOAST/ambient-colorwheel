@@ -56,7 +56,19 @@ mgu.run({
         };
         if (signals.hasNative()) signals.watch('de.bmw.infrastructure.VehicleCondition', '1', {
             VehicleCondition: noteCond,
-        }, log).catch((e) => log.warn('Fahrzeugzustand: ' + (e && e.message ? e.message : e)));
+        }, log).then((sub) => {
+            if (sub && sub.proxy) signals.readField(sub.proxy, 'VehicleCondition', 3000).then(noteCond).catch(() => {});
+        }).catch((e) => log.warn('Fahrzeugzustand: ' + (e && e.message ? e.message : e)));
+        if (signals.hasNative()) signals.watch('de.bmw.body.DoorsWindowsRoofMirrors', '1', {
+            CentralLockingSystemAndPanelStatus: (v) => {
+                const open = comfort.doorOpen(v);
+                comfort.writeJson(files.doors, { open: open, at: Date.now() });
+                if (!open || !parked) return;
+                parked = false;
+                log.info('Tür auf, Farbe wieder');
+                consider('woke');
+            },
+        }, log).catch((e) => log.warn('Türen: ' + (e && e.message ? e.message : e)));
         setInterval(() => {
             const screens = (ctx.spec && ctx.spec.screens) || [];
             let vis = false;
