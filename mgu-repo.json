@@ -10,8 +10,7 @@
       "python": "kit/tools/build.py",
       "args": ["{id}"],
       "sdk": "oap-sdk",
-      "output": "dist/{id}@{version}.tgz",
-      "network": ["doom"]
+      "output": "dist/{id}@{version}.tgz"
     }
   },
   "tools": [
